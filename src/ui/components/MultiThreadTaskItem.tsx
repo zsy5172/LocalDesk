@@ -104,7 +104,7 @@ export function MultiThreadTaskItem({
                   </span>
                   {totalTokens > 0 && (
                     <span className="text-[10px] text-muted bg-ink-100 px-1.5 py-0.5 rounded-full">
-                      {t("sidebar.tokensLabel", { count: totalTokens.toLocaleString() })}
+                      {t("sidebar.tokensLabel", { value: totalTokens.toLocaleString() })}
                     </span>
                   )}
                 </div>
@@ -233,7 +233,7 @@ export function MultiThreadTaskItem({
                         {isSummaryThread ? t("sidebar.summary") : thread.model || t("common.unknown")}
                       </span>
                       <span className="text-[10px] text-muted">
-                        {t("sidebar.tokensLabel", { count: ((thread.inputTokens || 0) + (thread.outputTokens || 0)).toLocaleString() })}
+                        {t("sidebar.tokensLabel", { value: ((thread.inputTokens || 0) + (thread.outputTokens || 0)).toLocaleString() })}
                       </span>
                     </div>
                   </div>

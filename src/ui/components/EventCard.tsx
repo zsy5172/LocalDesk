@@ -44,6 +44,13 @@ type SDKResultMessage = {
   type: "result";
   subtype?: string;
   usage?: { input_tokens?: number; output_tokens?: number };
+  duration_ms?: number;
+  duration_api_ms?: number;
+  total_cost_usd?: number;
+  retryable?: boolean;
+  retryPrompt?: string;
+  retry_prompt?: string;
+  retryAttempts?: number;
   [key: string]: unknown;
 };
 
@@ -52,6 +59,47 @@ type ToolStatus = "pending" | "success" | "error";
 const toolStatusMap = new Map<string, ToolStatus>();
 const toolStatusListeners = new Set<() => void>();
 const MAX_VISIBLE_LINES = 3;
+
+const isToolUseContent = (content: MessageContent): content is ToolUseContent => (
+  content.type === "tool_use" && typeof (content as ToolUseContent).id === "string"
+);
+
+const isTextContent = (content: MessageContent): content is { type: "text"; text: string } => (
+  content.type === "text" && typeof (content as { text?: unknown }).text === "string"
+);
+
+const isThinkingContent = (content: MessageContent): content is { type: "thinking"; thinking: string } => (
+  content.type === "thinking" && typeof (content as { thinking?: unknown }).thinking === "string"
+);
+
+const isToolResultContent = (content: unknown): content is ToolResultContent => (
+  typeof content === "object"
+  && content !== null
+  && (content as ToolResultContent).type === "tool_result"
+);
+
+const isUserPromptMessage = (message: StreamMessage): message is { type: "user_prompt"; prompt: string; attachments?: Attachment[] } => (
+  message.type === "user_prompt"
+  && typeof (message as { prompt?: unknown }).prompt === "string"
+);
+
+const isResultMessage = (message: SDKMessage): message is SDKResultMessage => (
+  message.type === "result"
+);
+
+const isAssistantMessage = (message: SDKMessage): message is SDKAssistantMessage => (
+  message.type === "assistant"
+  && typeof message.message === "object"
+  && message.message !== null
+  && Array.isArray((message.message as { content?: unknown }).content)
+);
+
+const isUserMessageWithResults = (message: SDKMessage): message is { type: "user"; message: { content: unknown[] } } => (
+  message.type === "user"
+  && typeof message.message === "object"
+  && message.message !== null
+  && Array.isArray((message.message as { content?: unknown }).content)
+);
 
 type AskUserQuestionInput = {
   questions?: Array<{
@@ -163,8 +211,8 @@ const SessionResult = ({ message, fileChanges, sessionId, onConfirmChanges, onRo
           </div>
           <div className="flex flex-wrap items-center gap-2 text-[14px]">
             <span className="font-normal">{t("eventCard.tokens")}</span>
-            <span className="inline-flex items-center rounded-full bg-surface-tertiary px-2.5 py-0.5 text-ink-700 text-[13px]">{t("eventCard.tokenInput", { count: formatMillions(message.usage?.input_tokens) })}</span>
-            <span className="inline-flex items-center rounded-full bg-surface-tertiary px-2.5 py-0.5 text-ink-700 text-[13px]">{t("eventCard.tokenOutput", { count: formatMillions(message.usage?.output_tokens) })}</span>
+            <span className="inline-flex items-center rounded-full bg-surface-tertiary px-2.5 py-0.5 text-ink-700 text-[13px]">{t("eventCard.tokenInput", { value: formatMillions(message.usage?.input_tokens) })}</span>
+            <span className="inline-flex items-center rounded-full bg-surface-tertiary px-2.5 py-0.5 text-ink-700 text-[13px]">{t("eventCard.tokenOutput", { value: formatMillions(message.usage?.output_tokens) })}</span>
             {hasCost && (
               <span className="inline-flex items-center rounded-full bg-accent/10 px-2.5 py-0.5 text-accent text-[13px]">
                 ${formatUsd(message.total_cost_usd)}
@@ -367,9 +415,7 @@ const ToolUseCard = ({
   messageContent, 
   showIndicator = false,
   permissionRequest,
-  onPermissionResult,
-  sessionId,
-  cwd
+  onPermissionResult
 }: { 
   messageContent: MessageContent; 
   showIndicator?: boolean;
@@ -378,7 +424,7 @@ const ToolUseCard = ({
   sessionId?: string;
   cwd?: string;
 }) => {
-  if (messageContent.type !== "tool_use") return null;
+  if (!isToolUseContent(messageContent)) return null;
   
   const toolStatus = useToolStatus(messageContent.id);
   const statusVariant = toolStatus === "error" ? "error" : "success";
@@ -387,8 +433,8 @@ const ToolUseCard = ({
   const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
-    if (messageContent?.id && !toolStatusMap.has(messageContent.id)) setToolStatus(messageContent.id, "pending");
-  }, [messageContent?.id]);
+    if (messageContent.id && !toolStatusMap.has(messageContent.id)) setToolStatus(messageContent.id, "pending");
+  }, [messageContent.id]);
 
   const getToolInfo = (): string | null => {
     const input = messageContent.input as Record<string, any>;
@@ -481,7 +527,7 @@ const AskUserQuestionCard = ({
   onPermissionResult?: (toolUseId: string, result: PermissionResult) => void;
 }) => {
   const { t } = useTranslation();
-  if (messageContent.type !== "tool_use") return null;
+  if (!isToolUseContent(messageContent)) return null;
   
   const input = messageContent.input as AskUserQuestionInput | null;
   const questions = input?.questions ?? [];
@@ -969,7 +1015,7 @@ export function MessageCard({
     return null;
   }
 
-  if (message.type === "user_prompt") {
+  if (isUserPromptMessage(message)) {
     return <UserMessageCard 
       message={message} 
       showIndicator={showIndicator}
@@ -987,7 +1033,7 @@ export function MessageCard({
     return <SystemInfoCard message={sdkMessage} showIndicator={showIndicator} />;
   }
 
-  if (sdkMessage.type === "result") {
+  if (isResultMessage(sdkMessage)) {
     if (sdkMessage.subtype === "success") {
       return <SessionResult message={sdkMessage} fileChanges={fileChanges} sessionId={sessionId} onConfirmChanges={onConfirmChanges} onRollbackChanges={onRollbackChanges} />;
     }
@@ -1021,22 +1067,22 @@ export function MessageCard({
     );
   }
 
-  if (sdkMessage.type === "assistant") {
+  if (isAssistantMessage(sdkMessage)) {
     const contents = sdkMessage.message.content;
     return (
       <>
         {contents.map((content: MessageContent, idx: number) => {
           const isLastContent = idx === contents.length - 1;
           // Use content.id for tool_use, otherwise use idx to ensure unique keys
-          const key = content.type === 'tool_use' ? `tool_use_${(content as any).id}` : `content_${idx}`;
+          const key = isToolUseContent(content) ? `tool_use_${content.id}` : `content_${idx}`;
           
-          if (content.type === "thinking") {
+          if (isThinkingContent(content)) {
             return <AssistantBlockCard key={key} title={t("eventCard.thinking")} text={content.thinking} showIndicator={isLastContent && showIndicator} isTextBlock={false} />;
           }
-          if (content.type === "text") {
+          if (isTextContent(content)) {
             return <AssistantBlockCard key={key} title={t("eventCard.assistant")} text={content.text} showIndicator={isLastContent && showIndicator} isTextBlock={true} />;
           }
-          if (content.type === "tool_use") {
+          if (isToolUseContent(content)) {
             if (content.name === "AskUserQuestion") {
               return <AskUserQuestionCard key={key} messageContent={content} permissionRequest={permissionRequest} onPermissionResult={onPermissionResult} />;
             }
@@ -1051,12 +1097,12 @@ export function MessageCard({
     );
   }
 
-  if (sdkMessage.type === "user") {
+  if (isUserMessageWithResults(sdkMessage)) {
     const contents = sdkMessage.message.content;
     return (
       <>
-        {contents.map((content: ToolResultContent, idx: number) => {
-          if (content.type === "tool_result") {
+        {contents.map((content, idx: number) => {
+          if (isToolResultContent(content)) {
             return <ToolResult key={idx} messageContent={content} />;
           }
           return null;

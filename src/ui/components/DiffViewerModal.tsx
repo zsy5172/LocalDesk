@@ -27,7 +27,7 @@ interface DiffLineItem {
   newLineNumber?: number;
 }
 
-export function DiffViewerModal({ file, files = [], cwd, sessionId, open, onClose, onFileChange }: DiffViewerModalProps) {
+export function DiffViewerModal({ file, files = [], cwd, open, onClose, onFileChange }: DiffViewerModalProps) {
   const { t } = useTranslation();
   const [oldContent, setOldContent] = useState<string>("");
   const [newContent, setNewContent] = useState<string>("");

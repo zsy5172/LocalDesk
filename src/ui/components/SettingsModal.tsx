@@ -1465,7 +1465,9 @@ function ToolsTab({
   useEffect(() => {
     const loadDefaultDir = async () => {
       try {
-        const dir = await window.__TAURI_INVOKE__("get_default_conversations_dir");
+        const invoke = (window as any).__TAURI_INVOKE__ as ((cmd: string) => Promise<string>) | undefined;
+        if (!invoke) return;
+        const dir = await invoke("get_default_conversations_dir");
         setDefaultDir(dir);
       } catch (err) {
         console.error("[SettingsModal] Failed to get default conversations dir:", err);

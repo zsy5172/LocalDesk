@@ -144,7 +144,7 @@ export function MultiThreadPanel({
                 </span>
                 {totalTokens > 0 && (
                   <span className="text-[10px] text-muted bg-ink-100 px-1.5 py-0.5 rounded-full">
-                    {t("sidebar.tokensLabel", { count: totalTokens.toLocaleString() })}
+                    {t("sidebar.tokensLabel", { value: totalTokens.toLocaleString() })}
                   </span>
                 )}
                 {isCreated && (

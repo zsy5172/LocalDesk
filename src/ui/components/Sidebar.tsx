@@ -337,7 +337,7 @@ export function Sidebar({
                           </span>
                           {totalTokens > 0 && (
                             <span className="text-[10px] text-muted bg-ink-100 px-1.5 py-0.5 rounded-full whitespace-nowrap ml-2">
-                              {t("sidebar.tokensLabel", { count: totalTokens.toLocaleString() })}
+                              {t("sidebar.tokensLabel", { value: totalTokens.toLocaleString() })}
                             </span>
                           )}
                         </div>
@@ -539,10 +539,10 @@ export function Sidebar({
                         <Tooltip.Content className="z-50 rounded-lg border border-ink-900/10 bg-white px-3 py-2 text-sm shadow-lg" sideOffset={5}>
                           <div className="flex flex-col gap-1">
                             <div className="text-xs text-muted">
-                              <span className="font-medium">{t("sidebar.tokenUsage.input")}</span> {t("sidebar.tokensLabel", { count: formatNumberWithSpaces(session.inputTokens) })}
+                              <span className="font-medium">{t("sidebar.tokenUsage.input")}</span> {t("sidebar.tokensLabel", { value: formatNumberWithSpaces(session.inputTokens) })}
                             </div>
                             <div className="text-xs text-muted">
-                              <span className="font-medium">{t("sidebar.tokenUsage.output")}</span> {t("sidebar.tokensLabel", { count: formatNumberWithSpaces(session.outputTokens) })}
+                              <span className="font-medium">{t("sidebar.tokenUsage.output")}</span> {t("sidebar.tokensLabel", { value: formatNumberWithSpaces(session.outputTokens) })}
                             </div>
                           </div>
                           <Tooltip.Arrow className="fill-white" />

@@ -195,7 +195,7 @@ export function TaskItem({
             </>
           )}
           {totalTokens > 0 && (
-            <span>• {t("sidebar.tokensLabel", { count: totalTokens.toLocaleString() })}</span>
+            <span>• {t("sidebar.tokensLabel", { value: totalTokens.toLocaleString() })}</span>
           )}
         </div>
 
