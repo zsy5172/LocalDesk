@@ -13,6 +13,7 @@
       {
         "label": "main",
         "title": "ValeDesk",
+        "devtools": true,
         "width": 1200,
         "height": 800,
         "resizable": true
