@@ -1010,6 +1010,7 @@ export function MessageCard({
   onRollbackChanges?: (sessionId: string) => void;
 }) {
   const { t } = useTranslation();
+  const sessions = useAppStore((state) => state.sessions);
   const showIndicator = isLast && isRunning;
   if ((message as any).type === "system_summary") {
     return null;
@@ -1086,8 +1087,6 @@ export function MessageCard({
             if (content.name === "AskUserQuestion") {
               return <AskUserQuestionCard key={key} messageContent={content} permissionRequest={permissionRequest} onPermissionResult={onPermissionResult} />;
             }
-            // Get cwd from store
-            const sessions = useAppStore((state) => state.sessions);
             const sessionCwd = sessionId ? sessions[sessionId]?.cwd : undefined;
             return <ToolUseCard key={key} messageContent={content} showIndicator={isLastContent && showIndicator} permissionRequest={permissionRequest} onPermissionResult={onPermissionResult} sessionId={sessionId} cwd={sessionCwd} />;
           }
