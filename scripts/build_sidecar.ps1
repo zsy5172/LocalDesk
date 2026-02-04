@@ -91,7 +91,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # Build binary with pkg
 Write-Host "Building binary with pkg..." -ForegroundColor Yellow
-pkg dist-sidecar/bundled.js --target $PkgTarget --output $OutputPath
+npx pkg dist-sidecar/bundled.js --target $PkgTarget --output $OutputPath
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Error building sidecar binary" -ForegroundColor Red
     exit $LASTEXITCODE

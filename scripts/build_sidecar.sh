@@ -65,7 +65,7 @@ npx esbuild src/sidecar/main.ts --bundle --platform=node --format=cjs --outfile=
 
 # Build binary with pkg
 echo "Building binary with pkg..."
-pkg dist-sidecar/bundled.js --target "$PKG_TARGET" --output "$BIN_PATH" || exit 1
+npx pkg dist-sidecar/bundled.js --target "$PKG_TARGET" --output "$BIN_PATH" || exit 1
 
 echo "Sidecar binary built successfully: $BIN_PATH"
 
