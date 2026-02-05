@@ -749,7 +749,6 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
           
           console.log(`[scheduler] ▶ Executing task: ${title} (model: ${model})`);
-          const { apiSettings } = get();
           getPlatform().sendClientEvent({
             type: "session.start",
             payload: {
