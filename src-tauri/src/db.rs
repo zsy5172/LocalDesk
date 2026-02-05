@@ -852,17 +852,49 @@ pub struct ApiSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub permission_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub web_search_provider: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tavily_api_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_tavily_search: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zai_api_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zai_api_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub enable_memory: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enable_todos: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_zai_reader: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zai_reader_api_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_git_tools: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_browser_tools: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_duck_duck_go: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_fetch_tools: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_image_tools: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conversation_data_dir: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub enable_session_git_repo: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_preview: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_mode: Option<String>,
     // Add other settings as needed
 }
 
