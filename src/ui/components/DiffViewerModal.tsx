@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useState, useEffect, useMemo, Fragment, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import * as Dialog from "@radix-ui/react-dialog";

@@ -4,6 +4,7 @@
 
 import { readFile, writeFile } from 'fs/promises';
 import { resolve } from 'path';
+import { diffLines } from 'diff';
 import type { ToolDefinition, ToolResult, ToolExecutionContext } from './base-tool.js';
 
 export const EditToolDefinition: ToolDefinition = {
@@ -37,7 +38,7 @@ export const EditToolDefinition: ToolDefinition = {
 };
 
 export async function executeEditTool(
-  args: { file_path: string; old_string: string; new_string: string; explanation: string },
+  args: { file_path: string; old_string: string; new_string: string; explanation: string; content?: string; _use_write_mode?: boolean },
   context: ToolExecutionContext
 ): Promise<ToolResult> {
   // Validate required parameters
@@ -46,6 +47,59 @@ export async function executeEditTool(
       success: false,
       error: 'Missing required parameter: file_path'
     };
+  }
+  
+  // Support direct write mode (when user modified content in preview)
+  if (args._use_write_mode && args.content !== undefined) {
+    // Security check
+    if (!context.isPathSafe(args.file_path)) {
+      return {
+        success: false,
+        error: `Access denied: Path is outside the working directory (${context.cwd})`
+      };
+    }
+    
+    try {
+      const fullPath = resolve(context.cwd, args.file_path);
+      const oldContent = await readFile(fullPath, 'utf-8');
+      const newContent = args.content;
+      
+      await writeFile(fullPath, newContent, 'utf-8');
+      
+      // Calculate diff statistics
+      const diffChanges = diffLines(oldContent, newContent);
+      let additions = 0;
+      let deletions = 0;
+      
+      for (const change of diffChanges) {
+        if (change.added) {
+          const lines = change.value.split('\n');
+          additions += lines.length - (change.value.endsWith('\n') ? 1 : 0);
+        } else if (change.removed) {
+          const lines = change.value.split('\n');
+          deletions += lines.length - (change.value.endsWith('\n') ? 1 : 0);
+        }
+      }
+      
+      const diffSnapshot = {
+        oldContent,
+        newContent,
+        additions,
+        deletions,
+        filePath: args.file_path
+      };
+      
+      return {
+        success: true,
+        output: `File edited (user modified): ${args.file_path}`,
+        data: { diffSnapshot }
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: `Failed to edit file: ${error.message}`
+      };
+    }
   }
   
   if (args.old_string === undefined || args.old_string === null) {

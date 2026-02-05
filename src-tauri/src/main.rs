@@ -347,6 +347,9 @@ fn handle_session_sync(db: &Arc<Database>, payload: &Value) {
         model: data.get("model").and_then(|v| v.as_str()).map(String::from),
         input_tokens: data.get("inputTokens").and_then(|v| v.as_i64()),
         output_tokens: data.get("outputTokens").and_then(|v| v.as_i64()),
+        charter: data.get("charter").cloned(),
+        charter_hash: data.get("charterHash").and_then(|v| v.as_str()).map(String::from),
+        adrs: data.get("adrs").cloned(),
         ..Default::default()
       };
       if let Err(e) = db.update_session(session_id, &params) {
@@ -1352,6 +1355,9 @@ fn client_event(app: tauri::AppHandle, state: tauri::State<'_, AppState>, event:
               "todos": history.todos,
               "model": history.session.model,
               "fileChanges": history.file_changes,
+              "charter": history.session.charter,
+              "charterHash": history.session.charter_hash,
+              "adrs": history.session.adrs,
               "hasMore": false,
               "page": "initial"
             }
@@ -1421,6 +1427,55 @@ fn client_event(app: tauri::AppHandle, state: tauri::State<'_, AppState>, event:
         "payload": { "sessions": sessions }
       }))?;
       Ok(())
+    }
+
+    // Session clone - duplicate an existing session (settings + history)
+    "session.clone" => {
+      let payload = event.get("payload")
+        .ok_or_else(|| "[session.clone] missing payload".to_string())?;
+      let session_id = payload.get("sessionId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "[session.clone] missing sessionId".to_string())?;
+
+      let conversations_dir = get_default_conversations_dir().ok();
+      match state.db.clone_session(session_id, conversations_dir.as_deref()) {
+        Ok(Some(session)) => {
+          // Best-effort create the auto session cwd on disk (only when it's under Conversations/{sessionId}).
+          if let (Some(cwd), Some(base)) = (session.cwd.as_ref(), conversations_dir.as_deref()) {
+            if std::path::PathBuf::from(cwd) == std::path::PathBuf::from(base).join(&session.id) {
+              let _ = std::fs::create_dir_all(cwd);
+            }
+          }
+
+          emit_server_event_app(&app, &json!({
+            "type": "session.cloned",
+            "payload": { "session": session }
+          }))?;
+
+          // Send updated session list
+          let sessions = state.db.list_sessions()
+            .map_err(|e| format!("[session.clone] list failed: {}", e))?;
+          emit_server_event_app(&app, &json!({
+            "type": "session.list",
+            "payload": { "sessions": sessions }
+          }))?;
+          Ok(())
+        }
+        Ok(None) => {
+          emit_server_event_app(&app, &json!({
+            "type": "runner.error",
+            "payload": { "message": "Session not found" }
+          }))?;
+          Ok(())
+        }
+        Err(e) => {
+          emit_server_event_app(&app, &json!({
+            "type": "runner.error",
+            "payload": { "message": format!("Failed to clone session: {}", e) }
+          }))?;
+          Ok(())
+        }
+      }
     }
 
     // Code Sandbox - execute JS/Python in Rust

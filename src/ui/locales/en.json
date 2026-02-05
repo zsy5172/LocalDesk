@@ -56,6 +56,7 @@
     "sessionMenuLabel": "Open session menu",
     "pinSession": "Pin session",
     "unpinSession": "Unpin session",
+    "cloneSession": "Clone session",
     "deleteSession": "Delete this session"
   },
   "prompt": {

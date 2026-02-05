@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useIPC } from "./hooks/useIPC";
 import { useAppStore } from "./store/useAppStore";
-import type { ServerEvent, ApiSettings, PermissionResult } from "./types";
+import type { ServerEvent, ApiSettings, PreviewBatch, PreviewApproval } from "./types";
 import { Sidebar } from "./components/Sidebar";
 import { StartSessionModal } from "./components/StartSessionModal";
 import { SessionEditModal } from "./components/SessionEditModal";
@@ -13,6 +13,9 @@ import { PromptInput, usePromptActions } from "./components/PromptInput";
 import { MessageCard } from "./components/EventCard";
 import { AppFooter } from "./components/AppFooter";
 import { TodoPanel } from "./components/TodoPanel";
+import { CharterPanel } from "./components/CharterPanel";
+import { ADRPanel } from "./components/ADRPanel";
+import { PreviewPanel } from "./components/PreviewPanel";
 import MDContent from "./render/markdown";
 import { getPlatform } from "./platform";
 import { basenameFsPath } from "./platform/fs-path";
@@ -34,6 +37,11 @@ function App() {
   const [settingsLoaded, setSettingsLoaded] = useState(false); // Track if settings have been loaded from backend
   const [llmProvidersLoaded, setLlmProvidersLoaded] = useState(false); // Track if LLM providers have been loaded
   const partialUpdateScheduledRef = useRef(false);
+  
+  // Preview system state
+  const [previewBatch, setPreviewBatch] = useState<PreviewBatch | null>(null);
+  const [showPreviewPanel, setShowPreviewPanel] = useState(false);
+  
   const selectedModel = useAppStore((s) => s.selectedModel);
   const setSelectedModel = useAppStore((s) => s.setSelectedModel);
   const selectedTemperature = useAppStore((s) => s.selectedTemperature);
@@ -134,7 +142,21 @@ function App() {
     if (event.type === "scheduler.notification") {
       console.log(`[scheduler] 🔔 ${event.payload.title}: ${event.payload.body}`);
     }
-  }, [handleServerEvent, handlePartialMessages]);
+    
+    // Handle preview request event
+    if (event.type === "preview.request") {
+      setPreviewBatch(event.payload.batch);
+      setShowPreviewPanel(true);
+    }
+    
+    // Handle preview resolved event
+    if (event.type === "preview.resolved") {
+      if (previewBatch?.id === event.payload.batchId) {
+        setShowPreviewPanel(false);
+        setPreviewBatch(null);
+      }
+    }
+  }, [handleServerEvent, handlePartialMessages, previewBatch]);
 
   const { connected, sendEvent } = useIPC(onEvent);
   const { handleStartFromModal } = usePromptActions(sendEvent);
@@ -364,13 +386,39 @@ function App() {
   }, [sendEvent]);
 
   const handleRollbackChanges = useCallback((sessionId: string) => {
-    sendEvent({ type: "file_changes.rollback", payload: { sessionId } });
-  }, [sendEvent]);
+    // Include cwd and fileChanges for cases where session is not in sidecar memory
+    const session = sessions[sessionId];
+    sendEvent({ 
+      type: "file_changes.rollback", 
+      payload: { 
+        sessionId,
+        cwd: session?.cwd,
+        fileChanges: session?.fileChanges
+      } 
+    });
+  }, [sendEvent, sessions]);
 
   const handleCreateTask = useCallback((payload: any) => {
     // Create task - it will auto-start on backend
     sendEvent({ type: "task.create", payload });
     setShowTaskDialog(false);
+  }, [sendEvent]);
+
+  // Preview system handlers
+  const handlePreviewApprove = useCallback((approval: PreviewApproval) => {
+    sendEvent({ type: "preview.approve", payload: approval });
+  }, [sendEvent]);
+
+  const handlePreviewApproveAll = useCallback((batchId: string) => {
+    sendEvent({ type: "preview.approve_all", payload: { batchId, action: "approve_all" } });
+    setShowPreviewPanel(false);
+    setPreviewBatch(null);
+  }, [sendEvent]);
+
+  const handlePreviewRejectAll = useCallback((batchId: string, reason?: string) => {
+    sendEvent({ type: "preview.reject_all", payload: { batchId, action: "reject_all", rejectReason: reason } });
+    setShowPreviewPanel(false);
+    setPreviewBatch(null);
   }, [sendEvent]);
   return (
     <div className="flex h-screen bg-surface">
@@ -499,8 +547,27 @@ function App() {
           </div>
         </div>
 
+        {/* Charter Panel - fixed above messages, doesn't scroll */}
+        {activeSession?.charter && (
+          <div className="flex-shrink-0 px-8 pt-2 pb-2 border-b border-ink-100 bg-surface">
+            <div className="mx-auto w-full max-w-4xl">
+              <CharterPanel
+                charter={activeSession.charter}
+                charterHash={activeSession.charterHash}
+              />
+            </div>
+          </div>
+        )}
+
         <div ref={messagesContainerRef} id="messages-container" className={`flex-1 overflow-y-auto overflow-x-hidden px-8 pt-6 min-w-0 ${activeSession?.todos && activeSession.todos.length > 0 ? 'pb-4' : 'pb-40'}`}>
           <div className="mx-auto w-full max-w-4xl min-w-0">
+            {/* ADR Panel - shows architecture decisions */}
+            {activeSession?.adrs && activeSession.adrs.length > 0 && (
+              <div className="mb-4">
+                <ADRPanel adrs={activeSession.adrs} />
+              </div>
+            )}
+
             {messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <div className="text-lg font-medium text-ink-700">No messages yet</div>
@@ -646,6 +713,19 @@ function App() {
           onClose={() => setShowFileBrowser(false)} 
         />
       )}
+
+      {/* Preview Panel for change approval */}
+      <PreviewPanel
+        batch={previewBatch}
+        open={showPreviewPanel}
+        onClose={() => {
+          setShowPreviewPanel(false);
+          // Note: Don't clear batch here - let backend handle resolution
+        }}
+        onApprove={handlePreviewApprove}
+        onApproveAll={handlePreviewApproveAll}
+        onRejectAll={handlePreviewRejectAll}
+      />
 
       <AppFooter />
     </div>

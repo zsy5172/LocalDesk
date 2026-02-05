@@ -3,9 +3,10 @@ import crypto from "node:crypto";
 import { mkdirSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import type { ClientEvent, Attachment, ApiSettings } from "../ui/types.js";
+import type { ClientEvent, Attachment, ApiSettings, PreviewApproval, BatchApproval } from "../ui/types.js";
 import type { FileChange } from "../agent/types.js";
 import type { ServerEvent } from "../agent/types.js";
+import { computeCharterHash } from "../agent/types.js";
 import type { SidecarInboundMessage, SidecarOutboundMessage } from "./protocol.js";
 
 // Use in-memory session store - no SQLite/better-sqlite3 dependency
@@ -20,10 +21,13 @@ import { fetchSkillsFromMarketplace } from "../agent/libs/skills-loader.js";
 import { webCache } from "../agent/libs/web-cache.js";
 import * as gitUtils from "../agent/git-utils.js";
 import { generateSessionTitle, DEFAULT_SESSION_TITLE } from "../agent/libs/util.js";
+import { handlePreviewApproval, handleBatchApproval } from "../agent/libs/preview-manager.js";
 
 type RunnerHandle = {
   abort: () => void;
   resolvePermission: (toolUseId: string, approved: boolean) => void;
+  resolvePreviewApproval?: (approval: any) => void;
+  resolvePreviewBatchApproval?: (batchApproval: any) => void;
 };
 
 function writeOut(msg: SidecarOutboundMessage) {
@@ -54,6 +58,24 @@ const multiThreadTasks = new Map<string, any>();
 
 function selectRunner(_model: string | undefined) {
   return runOpenAI;
+}
+
+// Helper to emit session.status with charter/adrs
+function emitSessionStatus(session: Session, statusOverride?: string) {
+  emit({
+    type: "session.status",
+    payload: {
+      sessionId: session.id,
+      status: statusOverride ?? session.status,
+      title: session.title,
+      cwd: session.cwd,
+      model: session.model,
+      temperature: session.temperature,
+      charter: session.charter,
+      charterHash: session.charterHash,
+      adrs: session.adrs
+    }
+  } as any);
 }
 
 const SESSION_GITIGNORE = `# Ignore everything by default
@@ -572,7 +594,7 @@ function handleSessionStart(event: Extract<ClientEvent, { type: "session.start" 
     }
   }
 
-  const session = sessions.createSession({
+  let session = sessions.createSession({
     id: forcedSessionId,
     cwd: resolvedCwd,
     title: event.payload.title,
@@ -584,33 +606,40 @@ function handleSessionStart(event: Extract<ClientEvent, { type: "session.start" 
     enableSessionGitRepo: event.payload.enableSessionGitRepo,
   });
 
+  // Set charter if provided
+  if (event.payload.charter) {
+    const charterHash = computeCharterHash(event.payload.charter);
+    sessions.updateSession(session.id, { 
+      charter: event.payload.charter,
+      charterHash 
+    });
+    // Re-fetch session to get updated charter
+    session = sessions.getSession(session.id)!;
+  }
+
   ensureSessionGitRepo(session);
 
   const hasAttachments = Array.isArray(event.payload.attachments) && event.payload.attachments.length > 0;
   if ((!event.payload.prompt || event.payload.prompt.trim() === "") && !hasAttachments) {
     sessions.updateSession(session.id, { status: "idle", lastPrompt: "" });
-    emit({
-      type: "session.status",
-      payload: { sessionId: session.id, status: "idle", title: session.title, cwd: session.cwd, model: session.model, temperature: session.temperature },
-    } as any);
+    session = sessions.getSession(session.id)!;
+    emitSessionStatus(session, "idle");
     return;
   }
 
   sessions.updateSession(session.id, { status: "running", lastPrompt: event.payload.prompt });
-  emit({
-    type: "session.status",
-    payload: { sessionId: session.id, status: "running", title: session.title, cwd: session.cwd, model: session.model, temperature: session.temperature },
-  } as any);
+  session = sessions.getSession(session.id)!;
+  emitSessionStatus(session, "running");
 
   if (session.title === DEFAULT_SESSION_TITLE && event.payload.prompt) {
     generateSessionTitle(event.payload.prompt, session.model)
       .then((newTitle) => {
         if (newTitle && newTitle !== DEFAULT_SESSION_TITLE) {
           sessions.updateSession(session.id, { title: newTitle });
-          emit({
-            type: "session.status",
-            payload: { sessionId: session.id, status: session.status, title: newTitle, cwd: session.cwd, model: session.model, temperature: session.temperature },
-          } as any);
+          const updatedSession = sessions.getSession(session.id);
+          if (updatedSession) {
+            emitSessionStatus(updatedSession);
+          }
         }
       })
       .catch((error) => {
@@ -1130,40 +1159,50 @@ function handleTaskStop(event: Extract<ClientEvent, { type: "task.stop" }>) {
 function handleFileChangesConfirm(event: Extract<ClientEvent, { type: "file_changes.confirm" }>) {
   const { sessionId } = event.payload;
   const session = sessions.getSession(sessionId);
-  if (!session) {
-    emit({ type: "file_changes.error", payload: { sessionId, message: "Session not found" } } as any);
-    return;
+  
+  // If session exists in memory, confirm the changes
+  if (session) {
+    sessions.confirmFileChanges(sessionId);
   }
-
-  sessions.confirmFileChanges(sessionId);
+  // Note: If session not in memory, the changes were already applied to disk.
+  // The UI just needs to update its state, so we still emit the confirmed event.
+  
   emit({ type: "file_changes.confirmed", payload: { sessionId } } as any);
 }
 
 function handleFileChangesRollback(event: Extract<ClientEvent, { type: "file_changes.rollback" }>) {
-  const { sessionId } = event.payload;
+  const { sessionId, cwd: providedCwd, fileChanges: providedChanges } = event.payload as any;
   const session = sessions.getSession(sessionId);
-
-  if (!session || !session.cwd) {
-    emit({ type: "file_changes.error", payload: { sessionId, message: "Session not found or no working directory" } } as any);
+  
+  // Use provided cwd or get from session
+  const cwd = providedCwd || session?.cwd;
+  
+  if (!cwd) {
+    emit({ type: "file_changes.error", payload: { sessionId, message: "No working directory available for rollback" } } as any);
     return;
   }
 
-  if (!gitUtils.isGitRepo(session.cwd)) {
+  if (!gitUtils.isGitRepo(cwd)) {
     emit({ type: "file_changes.error", payload: { sessionId, message: "Not a git repository" } } as any);
     return;
   }
 
-  const allChanges = sessions.getFileChanges(sessionId);
+  // Use provided file changes or get from memory
+  const allChanges = providedChanges || (session ? sessions.getFileChanges(sessionId) : []);
   const pendingChanges = allChanges.filter((c: any) => c.status === "pending");
+  
   if (pendingChanges.length === 0) {
     emit({ type: "file_changes.error", payload: { sessionId, message: "No pending changes to rollback" } } as any);
     return;
   }
 
   const filePaths = pendingChanges.map((c: any) => c.path);
-  const { failed } = gitUtils.checkoutFiles(filePaths, session.cwd);
+  const { failed } = gitUtils.checkoutFiles(filePaths, cwd);
 
-  sessions.clearFileChanges(sessionId);
+  if (session) {
+    sessions.clearFileChanges(sessionId);
+  }
+  
   const remainingChanges = allChanges.filter((c: any) => failed.includes(c.path));
   emit({ type: "file_changes.rolledback", payload: { sessionId, fileChanges: remainingChanges } } as any);
 }
@@ -1276,6 +1315,22 @@ function handleSkillsSetMarketplace(event: Extract<ClientEvent, { type: "skills.
   setMarketplaceUrl(url);
 }
 
+// Preview system handlers
+function handlePreviewApproveEvent(event: Extract<ClientEvent, { type: "preview.approve" }>) {
+  const approval = event.payload as PreviewApproval;
+  handlePreviewApproval(approval);
+}
+
+function handlePreviewApproveAllEvent(event: Extract<ClientEvent, { type: "preview.approve_all" }>) {
+  const batchApproval = event.payload as BatchApproval;
+  handleBatchApproval(batchApproval);
+}
+
+function handlePreviewRejectAllEvent(event: Extract<ClientEvent, { type: "preview.reject_all" }>) {
+  const batchApproval = event.payload as BatchApproval;
+  handleBatchApproval(batchApproval);
+}
+
 async function handleClientEvent(event: ClientEvent) {
   switch (event.type) {
     case "session.list":
@@ -1367,6 +1422,16 @@ async function handleClientEvent(event: ClientEvent) {
       return;
     case "skills.set-marketplace":
       handleSkillsSetMarketplace(event);
+      return;
+    // Preview system events
+    case "preview.approve":
+      handlePreviewApproveEvent(event);
+      return;
+    case "preview.approve_all":
+      handlePreviewApproveAllEvent(event);
+      return;
+    case "preview.reject_all":
+      handlePreviewRejectAllEvent(event);
       return;
     default:
       // For now, emit a visible error so UI doesn't silently stall.

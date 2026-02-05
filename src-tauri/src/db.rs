@@ -1,7 +1,33 @@
 use rusqlite::{Connection, params, Result as SqliteResult};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+
+fn rewrite_message_fields(value: &mut serde_json::Value, source_id: &str, new_id: &str, source_cwd: Option<&str>, new_cwd: Option<&str>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (k, v) in map.iter_mut() {
+                if (k == "session_id" || k == "sessionId") && v.as_str() == Some(source_id) {
+                    *v = serde_json::Value::String(new_id.to_string());
+                }
+                if k == "cwd" {
+                    if let (Some(src), Some(dst)) = (source_cwd, new_cwd) {
+                        if v.as_str() == Some(src) {
+                            *v = serde_json::Value::String(dst.to_string());
+                        }
+                    }
+                }
+                rewrite_message_fields(v, source_id, new_id, source_cwd, new_cwd);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for item in arr.iter_mut() {
+                rewrite_message_fields(item, source_id, new_id, source_cwd, new_cwd);
+            }
+        }
+        _ => {}
+    }
+}
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -122,6 +148,22 @@ impl Database {
             [],
         ); // Ignore error if column already exists
 
+        // Migration: add charter system columns if not exists
+        let _ = conn.execute(
+            "ALTER TABLE sessions ADD COLUMN charter TEXT",
+            [],
+        ); // Ignore error if column already exists
+        let _ = conn.execute(
+            "ALTER TABLE sessions ADD COLUMN charter_hash TEXT",
+            [],
+        ); // Ignore error if column already exists
+
+        // Migration: add ADR system column if not exists
+        let _ = conn.execute(
+            "ALTER TABLE sessions ADD COLUMN adrs TEXT",
+            [],
+        ); // Ignore error if column already exists
+
         Ok(())
     }
 
@@ -165,18 +207,134 @@ impl Database {
             output_tokens: 0,
             created_at: now,
             updated_at: now,
+            charter: None,
+            charter_hash: None,
+            adrs: None,
         })
+    }
+
+    pub fn clone_session(&self, source_id: &str, conversations_dir: Option<&str>) -> SqliteResult<Option<Session>> {
+        let now = chrono::Utc::now().timestamp_millis();
+
+        // IMPORTANT: fetch source session outside the DB lock to avoid deadlocks.
+        let source = match self.get_session(source_id)? {
+            Some(s) => s,
+            None => return Ok(None),
+        };
+
+        let new_id = uuid::Uuid::new_v4().to_string();
+        let new_title = format!("{} (clone)", source.title);
+
+        let source_cwd = source.cwd.clone();
+        let mut new_cwd = source.cwd.clone();
+        if let (Some(base), Some(src)) = (conversations_dir, source_cwd.as_deref()) {
+            let expected = PathBuf::from(base).join(source_id);
+            if PathBuf::from(src) == expected {
+                new_cwd = Some(PathBuf::from(base).join(&new_id).to_string_lossy().to_string());
+            }
+        }
+
+        {
+            let mut conn = self.conn.lock().unwrap();
+            let tx = conn.transaction()?;
+
+            // Raw JSON fields are stored as TEXT in sessions table.
+            let todos_json: Option<String> = tx.query_row(
+                "SELECT todos FROM sessions WHERE id = ?1",
+                [source_id],
+                |r| r.get(0),
+            )?;
+            let file_changes_json: Option<String> = tx.query_row(
+                "SELECT file_changes FROM sessions WHERE id = ?1",
+                [source_id],
+                |r| r.get(0),
+            )?;
+            let charter_json: Option<String> = tx.query_row(
+                "SELECT charter FROM sessions WHERE id = ?1",
+                [source_id],
+                |r| r.get(0),
+            )?;
+            let adrs_json: Option<String> = tx.query_row(
+                "SELECT adrs FROM sessions WHERE id = ?1",
+                [source_id],
+                |r| r.get(0),
+            )?;
+
+            // Clone session settings; clear thread_id to make it an independent session.
+            tx.execute(
+                r#"INSERT INTO sessions 
+                   (id, title, status, cwd, allowed_tools, last_prompt, model, thread_id, temperature, enable_session_git_repo, is_pinned, input_tokens, output_tokens, todos, file_changes, created_at, updated_at, charter, charter_hash, adrs)
+                   VALUES (?1, ?2, 'idle', ?3, ?4, ?5, ?6, NULL, ?7, ?8, 0, 0, 0, ?9, ?10, ?11, ?12, ?13, ?14, ?15)"#,
+                params![
+                    &new_id,
+                    &new_title,
+                    &new_cwd,
+                    &source.allowed_tools,
+                    &source.last_prompt,
+                    &source.model,
+                    &source.temperature,
+                    &source.enable_session_git_repo,
+                    &todos_json,
+                    &file_changes_json,
+                    now,
+                    now,
+                    &charter_json,
+                    &source.charter_hash,
+                    &adrs_json,
+                ],
+            )?;
+
+            // Clone messages (keep their original JSON payload), generate new message ids.
+            {
+                let mut stmt = tx.prepare(
+                    "SELECT data, created_at FROM messages WHERE session_id = ?1 ORDER BY created_at ASC",
+                )?;
+                let rows = stmt.query_map([source_id], |row| {
+                    let data: String = row.get(0)?;
+                    let created_at: i64 = row.get(1)?;
+                    Ok((data, created_at))
+                })?;
+
+                for row in rows {
+                    let (data, created_at) = row?;
+                    let msg_id = uuid::Uuid::new_v4().to_string();
+
+                    let rewritten = match serde_json::from_str::<serde_json::Value>(&data) {
+                        Ok(mut value) => {
+                            rewrite_message_fields(&mut value, source_id, &new_id, source_cwd.as_deref(), new_cwd.as_deref());
+                            serde_json::to_string(&value).unwrap_or_else(|_| data.clone())
+                        }
+                        Err(_) => data.clone(),
+                    };
+
+                    tx.execute(
+                        "INSERT INTO messages (id, session_id, data, created_at) VALUES (?1, ?2, ?3, ?4)",
+                        params![&msg_id, &new_id, &rewritten, created_at],
+                    )?;
+                }
+            }
+
+            tx.commit()?;
+        }
+
+        self.get_session(&new_id)
     }
 
     pub fn list_sessions(&self) -> SqliteResult<Vec<Session>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             r#"SELECT id, title, status, cwd, allowed_tools, last_prompt, 
-                      model, thread_id, temperature, enable_session_git_repo, is_pinned, input_tokens, output_tokens, created_at, updated_at
+                      model, thread_id, temperature, enable_session_git_repo, is_pinned, input_tokens, output_tokens, created_at, updated_at,
+                      charter, charter_hash, adrs
                FROM sessions ORDER BY updated_at DESC"#
         )?;
 
         let rows = stmt.query_map([], |row| {
+            let charter_str: Option<String> = row.get(15)?;
+            let charter = charter_str.and_then(|s| serde_json::from_str(&s).ok());
+            let adrs_str: Option<String> = row.get(17)?;
+            let adrs = adrs_str.and_then(|s| serde_json::from_str(&s).ok());
+            
             Ok(Session {
                 id: row.get(0)?,
                 title: row.get(1)?,
@@ -193,6 +351,9 @@ impl Database {
                 output_tokens: row.get(12)?,
                 created_at: row.get(13)?,
                 updated_at: row.get(14)?,
+                charter,
+                charter_hash: row.get(16)?,
+                adrs,
             })
         })?;
 
@@ -203,11 +364,17 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             r#"SELECT id, title, status, cwd, allowed_tools, last_prompt, 
-                      model, thread_id, temperature, enable_session_git_repo, is_pinned, input_tokens, output_tokens, created_at, updated_at
+                      model, thread_id, temperature, enable_session_git_repo, is_pinned, input_tokens, output_tokens, created_at, updated_at,
+                      charter, charter_hash, adrs
                FROM sessions WHERE id = ?1"#
         )?;
 
         let mut rows = stmt.query_map([id], |row| {
+            let charter_str: Option<String> = row.get(15)?;
+            let charter = charter_str.and_then(|s| serde_json::from_str(&s).ok());
+            let adrs_str: Option<String> = row.get(17)?;
+            let adrs = adrs_str.and_then(|s| serde_json::from_str(&s).ok());
+            
             Ok(Session {
                 id: row.get(0)?,
                 title: row.get(1)?,
@@ -224,6 +391,9 @@ impl Database {
                 output_tokens: row.get(12)?,
                 created_at: row.get(13)?,
                 updated_at: row.get(14)?,
+                charter,
+                charter_hash: row.get(16)?,
+                adrs,
             })
         })?;
 
@@ -274,6 +444,21 @@ impl Database {
         if let Some(output_tokens) = params.output_tokens {
             updates.push(format!("output_tokens = ?{}", idx));
             values.push(Box::new(output_tokens));
+            idx += 1;
+        }
+        if let Some(ref charter) = params.charter {
+            updates.push(format!("charter = ?{}", idx));
+            values.push(Box::new(serde_json::to_string(charter).unwrap_or_default()));
+            idx += 1;
+        }
+        if let Some(ref charter_hash) = params.charter_hash {
+            updates.push(format!("charter_hash = ?{}", idx));
+            values.push(Box::new(charter_hash.clone()));
+            idx += 1;
+        }
+        if let Some(ref adrs) = params.adrs {
+            updates.push(format!("adrs = ?{}", idx));
+            values.push(Box::new(serde_json::to_string(adrs).unwrap_or_default()));
             idx += 1;
         }
 
@@ -517,6 +702,14 @@ pub struct Session {
     pub output_tokens: i64,
     pub created_at: i64,
     pub updated_at: i64,
+    // Charter system fields
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub charter: Option<serde_json::Value>,  // JSON blob for CharterData
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub charter_hash: Option<String>,
+    // ADR system fields
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adrs: Option<serde_json::Value>,  // JSON blob for ADRItem[]
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -558,6 +751,14 @@ pub struct UpdateSessionParams {
     pub input_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_tokens: Option<i64>,
+    // Charter system fields
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub charter: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub charter_hash: Option<String>,
+    // ADR system fields
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adrs: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

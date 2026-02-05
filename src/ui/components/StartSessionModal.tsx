@@ -1,9 +1,139 @@
 import { useCallback, useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import type { ApiSettings, LLMModel, ClientEvent, Attachment } from "../types";
+import type { ApiSettings, LLMModel, ClientEvent, Attachment, CharterData, CharterItem } from "../types";
 import { getPlatform } from "../platform";
 import { useAppStore } from "../store/useAppStore";
+
+// Charter template types
+type CharterTemplate = 'none' | 'blank' | 'code-review' | 'documentation' | 'bugfix' | 'feature';
+
+interface CharterTemplateInfo {
+  id: CharterTemplate;
+  name: string;
+  description: string;
+  icon: string;
+}
+
+const CHARTER_TEMPLATES: CharterTemplateInfo[] = [
+  { id: 'none', name: '无 Charter', description: '不使用主题化工作区', icon: '⚪' },
+  { id: 'blank', name: '空白模板', description: '自定义 Charter 内容', icon: '📝' },
+  { id: 'code-review', name: '代码审查', description: '审查代码质量和安全性', icon: '🔍' },
+  { id: 'documentation', name: '文档编写', description: '编写或更新文档', icon: '📚' },
+  { id: 'bugfix', name: 'Bug 修复', description: '定位和修复问题', icon: '🐛' },
+  { id: 'feature', name: '功能开发', description: '开发新功能', icon: '✨' },
+];
+
+// Generate charter item with unique ID
+function createCharterItem(content: string, prefix: string): CharterItem {
+  const shortId = Math.random().toString(36).substring(2, 10);
+  return { id: `${prefix}-${shortId}`, content };
+}
+
+// Generate charter from template
+function generateCharterFromTemplate(template: CharterTemplate, context?: string): CharterData | undefined {
+  if (template === 'none') return undefined;
+  
+  const now = Date.now();
+  const base = {
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  switch (template) {
+    case 'blank':
+      return {
+        ...base,
+        goal: createCharterItem('定义你的目标', 'goal'),
+        definitionOfDone: [createCharterItem('定义完成标准', 'dod')],
+      };
+    
+    case 'code-review':
+      return {
+        ...base,
+        goal: createCharterItem('审查代码质量、安全性和最佳实践', 'goal'),
+        nonGoals: [
+          createCharterItem('不进行功能开发或重构', 'ng'),
+          createCharterItem('不修改测试逻辑', 'ng'),
+        ],
+        definitionOfDone: [
+          createCharterItem('所有安全问题已识别并记录', 'dod'),
+          createCharterItem('代码风格问题已标注', 'dod'),
+          createCharterItem('潜在 bug 已列出', 'dod'),
+        ],
+        constraints: [
+          createCharterItem('只读审查，不修改代码', 'con'),
+          createCharterItem('按文件顺序审查', 'con'),
+        ],
+        invariants: [
+          createCharterItem('不泄露敏感信息', 'inv'),
+        ],
+      };
+    
+    case 'documentation':
+      return {
+        ...base,
+        goal: createCharterItem('编写清晰、准确、易于理解的文档', 'goal'),
+        nonGoals: [
+          createCharterItem('不修改代码逻辑', 'ng'),
+        ],
+        definitionOfDone: [
+          createCharterItem('文档结构清晰', 'dod'),
+          createCharterItem('示例代码可运行', 'dod'),
+          createCharterItem('无拼写错误', 'dod'),
+        ],
+        constraints: [
+          createCharterItem('使用 Markdown 格式', 'con'),
+          createCharterItem('保持一致的风格', 'con'),
+        ],
+      };
+    
+    case 'bugfix':
+      return {
+        ...base,
+        goal: createCharterItem('定位并修复问题的根本原因', 'goal'),
+        nonGoals: [
+          createCharterItem('不进行功能增强', 'ng'),
+          createCharterItem('不重构无关代码', 'ng'),
+        ],
+        definitionOfDone: [
+          createCharterItem('问题已复现并理解', 'dod'),
+          createCharterItem('修复已测试通过', 'dod'),
+          createCharterItem('无回归问题', 'dod'),
+        ],
+        constraints: [
+          createCharterItem('最小化修改范围', 'con'),
+        ],
+        invariants: [
+          createCharterItem('不破坏现有测试', 'inv'),
+          createCharterItem('不引入新的安全漏洞', 'inv'),
+        ],
+      };
+    
+    case 'feature':
+      return {
+        ...base,
+        goal: createCharterItem('实现新功能并保证代码质量', 'goal'),
+        definitionOfDone: [
+          createCharterItem('功能实现完整', 'dod'),
+          createCharterItem('测试覆盖率达标', 'dod'),
+          createCharterItem('文档已更新', 'dod'),
+        ],
+        constraints: [
+          createCharterItem('遵循现有代码风格', 'con'),
+          createCharterItem('保持向后兼容', 'con'),
+        ],
+        invariants: [
+          createCharterItem('不破坏现有功能', 'inv'),
+          createCharterItem('不引入安全漏洞', 'inv'),
+        ],
+      };
+    
+    default:
+      return undefined;
+  }
+}
 
 interface StartSessionModalProps {
   cwd: string;
@@ -11,7 +141,7 @@ interface StartSessionModalProps {
   pendingStart: boolean;
   onCwdChange: (value: string) => void;
   onPromptChange: (value: string) => void;
-  onStart: (options?: { enableSessionGitRepo?: boolean }) => void;
+  onStart: (options?: { enableSessionGitRepo?: boolean; charter?: CharterData }) => void;
   onClose: () => void;
   apiSettings: ApiSettings | null;
   availableModels: Array<{ id: string; name: string; description?: string }>;
@@ -54,6 +184,7 @@ export function StartSessionModal({
   const removeAttachment = useAppStore((state) => state.removeAttachment);
   const setGlobalError = useAppStore((state) => state.setGlobalError);
   const [enableSessionGitRepo, setEnableSessionGitRepo] = useState<boolean>(apiSettings?.enableSessionGitRepo ?? false);
+  const [charterTemplate, setCharterTemplate] = useState<CharterTemplate>('none');
 
   useEffect(() => {
     getPlatform()
@@ -67,6 +198,12 @@ export function StartSessionModal({
   useEffect(() => {
     setEnableSessionGitRepo(apiSettings?.enableSessionGitRepo ?? false);
   }, [apiSettings?.enableSessionGitRepo]);
+
+  // Handle start with charter generation
+  const handleStart = useCallback(() => {
+    const charter = generateCharterFromTemplate(charterTemplate);
+    onStart({ enableSessionGitRepo, charter });
+  }, [charterTemplate, enableSessionGitRepo, onStart]);
 
   // Show only enabled models from settings.
   // If no LLM models are configured, fall back to legacy API models.
@@ -267,7 +404,8 @@ export function StartSessionModal({
     }
 
     const hasText = e.clipboardData?.types?.includes("text/plain");
-    if (!hasText) e.preventDefault();
+    if (hasText) return;
+    e.preventDefault();
 
     void (async () => {
       const file = await readImageFromClipboardApi();
@@ -532,7 +670,7 @@ export function StartSessionModal({
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !pendingStart) {
                   e.preventDefault();
-                  onStart({ enableSessionGitRepo });
+                  handleStart();
                 }
               }}
             />
@@ -548,6 +686,40 @@ export function StartSessionModal({
               />
             </div>
           </label>
+
+          {/* Charter Template Selection */}
+          <div className="rounded-xl border border-ink-900/10 bg-surface px-4 py-3">
+            <div className="grid gap-2">
+              <div className="flex items-center justify-between">
+                <div className="grid gap-0.5">
+                  <div className="text-sm font-medium text-ink-800">主题化工作区 (Charter)</div>
+                  <div className="text-[11px] text-muted-light">定义 Session 的目标、约束和完成标准</div>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {CHARTER_TEMPLATES.map((template) => (
+                  <button
+                    key={template.id}
+                    type="button"
+                    onClick={() => setCharterTemplate(template.id)}
+                    className={`flex flex-col items-center gap-1 rounded-lg border p-2 text-center transition-all ${
+                      charterTemplate === template.id
+                        ? 'border-accent bg-accent/5 ring-1 ring-accent/20'
+                        : 'border-ink-200 hover:border-ink-300 hover:bg-ink-50'
+                    }`}
+                  >
+                    <span className="text-lg">{template.icon}</span>
+                    <span className="text-xs font-medium text-ink-700">{template.name}</span>
+                  </button>
+                ))}
+              </div>
+              {charterTemplate !== 'none' && (
+                <div className="text-xs text-ink-500 bg-ink-50 rounded-lg p-2 mt-1">
+                  {CHARTER_TEMPLATES.find(t => t.id === charterTemplate)?.description}
+                </div>
+              )}
+            </div>
+          </div>
 
           <label className="flex items-center justify-between rounded-xl border border-ink-900/10 bg-surface px-4 py-3">
             <div className="grid gap-0.5">
@@ -568,7 +740,7 @@ export function StartSessionModal({
 
           <button
             className="flex flex-col items-center rounded-full bg-accent px-5 py-3 text-sm font-medium text-white shadow-soft hover:bg-accent-hover transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={() => onStart({ enableSessionGitRepo })}
+            onClick={() => handleStart()}
             disabled={pendingStart}
           >
             {pendingStart ? (

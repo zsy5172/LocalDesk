@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { ServerEvent, SessionStatus, StreamMessage, TodoItem, FileChange, MultiThreadTask, LLMModel, LLMProvider, LLMProviderSettings, ApiSettings, Attachment } from "../types";
+import type { CharterData, ADRItem } from "../../agent/types";
 import { getPlatform } from "../platform";
 
 export type PermissionRequest = {
@@ -33,6 +34,9 @@ export type SessionView = {
   historyLoading?: boolean;
   historyLoadType?: "initial" | "prepend";
   historyLoadId?: number;
+  charter?: CharterData;
+  charterHash?: string;
+  adrs?: ADRItem[];
 };
 
 interface AppState {
@@ -201,7 +205,11 @@ export const useAppStore = create<AppState>((set, get) => ({
             createdAt: session.createdAt,
             updatedAt: session.updatedAt,
             inputTokens: session.inputTokens,
-            outputTokens: session.outputTokens
+            outputTokens: session.outputTokens,
+            // Preserve charter/adrs from session list or existing state
+            charter: session.charter ?? existing.charter,
+            charterHash: session.charterHash ?? existing.charterHash,
+            adrs: session.adrs ?? existing.adrs
           };
         }
 
@@ -236,7 +244,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       case "session.history": {
-        const { sessionId, messages, status, inputTokens, outputTokens, todos, model, fileChanges, hasMore, nextCursor, page } = event.payload;
+        const { sessionId, messages, status, inputTokens, outputTokens, todos, model, fileChanges, hasMore, nextCursor, page, charter, charterHash, adrs } = event.payload;
         set((state) => {
           const existing = state.sessions[sessionId] ?? createSession(sessionId);
           const loadType = page ?? "initial";
@@ -293,7 +301,11 @@ export const useAppStore = create<AppState>((set, get) => ({
                 historyCursor: nextCursor ?? existing.historyCursor,
                 historyLoading: false,
                 historyLoadType: loadType,
-                historyLoadId: (existing.historyLoadId ?? 0) + 1
+                historyLoadId: (existing.historyLoadId ?? 0) + 1,
+                // Load charter and ADRs from DB
+                charter: charter ?? existing.charter,
+                charterHash: charterHash ?? existing.charterHash,
+                adrs: adrs ?? existing.adrs
               }
             }
           };
@@ -302,7 +314,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       case "session.status": {
-        const { sessionId, status, title, cwd, model, temperature } = event.payload;
+        const { sessionId, status, title, cwd, model, temperature, charter, charterHash, adrs } = event.payload;
         const isPendingStart = state.pendingStart;
 
         set((state) => {
@@ -320,7 +332,11 @@ export const useAppStore = create<AppState>((set, get) => ({
                 updatedAt: Date.now(),
                 // Mark as hydrated if this is a new session we just started
                 // This prevents session.history from overwriting new messages
-                hydrated: isPendingStart ? true : existing.hydrated
+                hydrated: isPendingStart ? true : existing.hydrated,
+                // Update charter/adrs if provided
+                charter: charter ?? existing.charter,
+                charterHash: charterHash ?? existing.charterHash,
+                adrs: adrs ?? existing.adrs
               }
             }
           };
@@ -349,6 +365,38 @@ export const useAppStore = create<AppState>((set, get) => ({
           );
           get().setActiveSessionId(remaining[0]?.id ?? null);
         }
+        break;
+      }
+
+      case "session.cloned": {
+        const { session } = event.payload;
+        set((state) => {
+          const existing = state.sessions[session.id] ?? createSession(session.id);
+          return {
+            sessions: {
+              ...state.sessions,
+              [session.id]: {
+                ...existing,
+                id: session.id,
+                title: session.title,
+                status: session.status,
+                cwd: session.cwd,
+                model: session.model,
+                isPinned: session.isPinned,
+                createdAt: session.createdAt,
+                updatedAt: session.updatedAt,
+                inputTokens: session.inputTokens,
+                outputTokens: session.outputTokens,
+                charter: session.charter,
+                charterHash: session.charterHash,
+                adrs: session.adrs,
+                hydrated: false
+              }
+            },
+            showStartModal: false
+          };
+        });
+        get().setActiveSessionId(session.id);
         break;
       }
 
@@ -687,7 +735,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         const { title, prompt } = event.payload as any;
         if (prompt) {
           // Use scheduler default model, or fallback to first enabled model
-          const { schedulerDefaultModel, llmModels } = get();
+          const { schedulerDefaultModel, llmModels, apiSettings } = get();
           let model = schedulerDefaultModel;
           
           if (!model) {

@@ -58,6 +58,145 @@ export interface FileChange {
   commitHash?: string;       // Commit hash for showing commit-level diffs
 }
 
+// ============================================================
+// Charter System Types (Phase 1)
+// ============================================================
+
+// Single charter item with unique ID
+export interface CharterItem {
+  id: string;         // Unique identifier (e.g., "goal-001", "constraint-002")
+  content: string;    // The actual text content
+}
+
+// Charter data structure - defines session scope and constraints
+export interface CharterData {
+  // Core goal definition
+  goal: CharterItem;              // Primary objective (required)
+  nonGoals?: CharterItem[];       // Explicitly out of scope items
+  
+  // Acceptance criteria
+  definitionOfDone: CharterItem[]; // Must be met for session to be "complete"
+  
+  // Constraints and invariants
+  constraints?: CharterItem[];     // Soft constraints (can be overridden with ADR)
+  invariants?: CharterItem[];      // Hard constraints (NEVER violate)
+  
+  // Context
+  glossary?: Record<string, string>; // Domain-specific terminology
+  
+  // Metadata
+  version?: number;                // Charter version (increments on change)
+  createdAt?: number;              // Creation timestamp
+  updatedAt?: number;              // Last update timestamp
+}
+
+// ============================================================
+// ADR (Architecture Decision Record) System Types (Phase 2)
+// ============================================================
+
+// ADR status lifecycle
+export type ADRStatus = 
+  | 'proposed'    // Initial state - under discussion
+  | 'accepted'    // Approved and in effect
+  | 'rejected'    // Not approved
+  | 'deprecated'  // Was accepted, no longer recommended
+  | 'superseded'; // Replaced by another ADR
+
+// ADR types for categorization
+export type ADRType = 
+  | 'architectural'   // System architecture decisions
+  | 'technical'       // Technical implementation choices
+  | 'process'         // Process/workflow decisions
+  | 'charter-change'  // Changes to session charter
+  | 'constraint-override'; // Overriding a soft constraint
+
+// ADR item structure
+export interface ADRItem {
+  id: string;            // Format: adr-YYYY-MM-DD-<short_id>
+  title: string;         // Brief descriptive title
+  status: ADRStatus;     // Current status
+  type: ADRType;         // Category of decision
+  
+  // Core content
+  context: string;       // Why is this decision needed?
+  decision: string;      // What was decided?
+  consequences: string;  // What are the implications?
+  
+  // Optional fields
+  alternatives?: string;          // What alternatives were considered?
+  supersedes?: string;            // ID of ADR this supersedes
+  supersededBy?: string;          // ID of ADR that superseded this
+  charterRefs?: string[];         // Referenced charter item IDs
+  charterHashBefore?: string;     // Charter hash before change
+  charterHashAfter?: string;      // Charter hash after change
+  
+  // Metadata
+  createdAt: number;
+  updatedAt: number;
+  author?: string;
+}
+
+// ============================================================
+// Preview System Types (Phase 4.4-4.7)
+// ============================================================
+
+// Preview change types
+export type PreviewType = 
+  | 'file_edit'      // Modifying existing file
+  | 'file_create'    // Creating new file
+  | 'file_delete'    // Deleting file
+  | 'command_exec';  // Executing shell command
+
+// Preview status
+export type PreviewStatus = 'pending' | 'approved' | 'rejected' | 'modified';
+
+// Single change preview
+export interface ChangePreview {
+  id: string;                    // Unique preview ID
+  type: PreviewType;             // Type of change
+  target: string;                // File path or command
+  before?: string;               // Original content (for edit/delete)
+  after?: string;                // New content (for edit/create)
+  command?: string;              // Shell command (for command_exec)
+  description?: string;          // Human-readable description
+  status: PreviewStatus;         // Current status
+  userModifiedContent?: string;  // User's modified version (if status='modified')
+  createdAt: number;             // Timestamp
+}
+
+// Batch preview request from agent
+export interface PreviewBatch {
+  id: string;                    // Batch ID
+  sessionId: string;             // Session this belongs to
+  toolCallId: string;            // Original tool call ID
+  toolName: string;              // Tool that triggered this
+  previews: ChangePreview[];     // List of changes to preview
+  status: 'pending' | 'resolved';
+  createdAt: number;
+}
+
+// User's response to a preview
+export type ApprovalAction = 
+  | 'approve'           // Accept as-is
+  | 'approve_modified'  // Accept with user modifications
+  | 'reject_retry'      // Reject and ask agent to retry
+  | 'reject_skip';      // Reject and skip this operation
+
+export interface PreviewApproval {
+  batchId: string;
+  previewId: string;
+  action: ApprovalAction;
+  modifiedContent?: string;      // Content if action='approve_modified'
+  rejectReason?: string;         // Reason if action='reject_*'
+}
+
+// Batch approval (approve/reject all)
+export interface BatchApproval {
+  batchId: string;
+  action: 'approve_all' | 'reject_all';
+  rejectReason?: string;
+}
+
 // Skill types
 export interface Skill {
   id: string;
@@ -85,6 +224,11 @@ export type SessionInfo = {
   inputTokens?: number;
   outputTokens?: number;
   threadId?: string; // Thread ID for multi-thread sessions
+  // Charter system fields
+  charter?: CharterData;  // Session charter (scope/constraints)
+  charterHash?: string;   // Hash for change detection
+  // ADR system fields
+  adrs?: ADRItem[];       // Architecture Decision Records
 };
 
 export type ThreadInfo = {
@@ -181,6 +325,10 @@ export type ApiSettings = {
   // as their working directory for file I/O.
   conversationDataDir?: string;
   enableSessionGitRepo?: boolean; // Initialize a git repo in session folders when available
+
+  // Preview system settings
+  enablePreview?: boolean; // Enable preview mode for file changes (default: false)
+  previewMode?: 'always' | 'ask' | 'never'; // When to show preview: always, ask (per-tool), never
 };
 
 export type ModelInfo = {
@@ -227,6 +375,7 @@ export type ServerEvent =
   | { type: "session.list"; payload: { sessions: SessionInfo[] } }
   | { type: "session.history"; payload: { sessionId: string; status: SessionStatus; messages: StreamMessage[]; inputTokens?: number; outputTokens?: number; todos?: TodoItem[]; model?: string; fileChanges?: FileChange[]; hasMore?: boolean; nextCursor?: number; page?: "initial" | "prepend" } }
   | { type: "session.deleted"; payload: { sessionId: string } }
+  | { type: "session.cloned"; payload: { session: SessionInfo } }
   | { type: "permission.request"; payload: { sessionId: string; toolUseId: string; toolName: string; input: unknown; explanation?: string } }
   | { type: "runner.error"; payload: { sessionId?: string; message: string } }
   | { type: "settings.loaded"; payload: { settings: ApiSettings | null } }
@@ -254,14 +403,18 @@ export type ServerEvent =
   | { type: "scheduler.notification"; payload: { title: string; body: string } }
   | { type: "scheduler.task_execute"; payload: { taskId: string; title: string; prompt?: string } }
   | { type: "scheduler.default_model.loaded"; payload: { modelId: string | null } }
-  | { type: "scheduler.default_temperature.loaded"; payload: { temperature: number; sendTemperature: boolean } };
+  | { type: "scheduler.default_temperature.loaded"; payload: { temperature: number; sendTemperature: boolean } }
+  // Preview system events
+  | { type: "preview.request"; payload: { batch: PreviewBatch } }
+  | { type: "preview.resolved"; payload: { batchId: string; sessionId: string } };
 
 // Client -> Server events
 export type ClientEvent =
-  | { type: "session.start"; payload: { title: string; prompt: string; cwd?: string; model?: string; allowedTools?: string; threadId?: string; temperature?: number; enableSessionGitRepo?: boolean; attachments?: Attachment[] } }
+  | { type: "session.start"; payload: { title: string; prompt: string; cwd?: string; model?: string; allowedTools?: string; threadId?: string; temperature?: number; enableSessionGitRepo?: boolean; attachments?: Attachment[]; charter?: CharterData } }
   | { type: "session.continue"; payload: { sessionId: string; prompt: string; retry?: boolean; retryReason?: string; attachments?: Attachment[] } }
   | { type: "session.stop"; payload: { sessionId: string; } }
   | { type: "session.delete"; payload: { sessionId: string; } }
+  | { type: "session.clone"; payload: { sessionId: string; } }
   | { type: "session.pin"; payload: { sessionId: string; isPinned: boolean; } }
   | { type: "session.update-cwd"; payload: { sessionId: string; cwd: string; } }
   | { type: "session.update"; payload: { sessionId: string; model?: string; temperature?: number; sendTemperature?: boolean; title?: string; } }
@@ -274,7 +427,7 @@ export type ClientEvent =
   | { type: "open.external"; payload: { url: string; } }
   | { type: "models.get" }
   | { type: "file_changes.confirm"; payload: { sessionId: string; } }
-  | { type: "file_changes.rollback"; payload: { sessionId: string; } }
+  | { type: "file_changes.rollback"; payload: { sessionId: string; cwd?: string; fileChanges?: FileChange[] } }
   | { type: "thread.list"; payload: { sessionId: string } }
   | { type: "task.create"; payload: CreateTaskPayload }
   | { type: "task.start"; payload: { taskId: string } }
@@ -294,4 +447,8 @@ export type ClientEvent =
   | { type: "scheduler.default_model.get" }
   | { type: "scheduler.default_model.set"; payload: { modelId: string } }
   | { type: "scheduler.default_temperature.get" }
-  | { type: "scheduler.default_temperature.set"; payload: { temperature: number; sendTemperature: boolean } };
+  | { type: "scheduler.default_temperature.set"; payload: { temperature: number; sendTemperature: boolean } }
+  // Preview system events
+  | { type: "preview.approve"; payload: PreviewApproval }
+  | { type: "preview.approve_all"; payload: BatchApproval }
+  | { type: "preview.reject_all"; payload: BatchApproval };

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { Trans, useTranslation } from "react-i18next";
-import type { ClientEvent, Attachment, AttachmentType } from "../types";
+import type { ClientEvent, Attachment, AttachmentType, CharterData } from "../types";
 import { useAppStore } from "../store/useAppStore";
 import { DEFAULT_SESSION_TITLE } from "../constants";
 
@@ -57,7 +57,7 @@ export function usePromptActions(sendEvent: (event: ClientEvent) => void) {
   const activeSession = activeSessionId ? sessions[activeSessionId] : undefined;
   const isRunning = activeSession?.status === "running";
 
-  const handleSend = useCallback(async (options?: { enableSessionGitRepo?: boolean }) => {
+  const handleSend = useCallback(async (options?: { enableSessionGitRepo?: boolean; charter?: CharterData }) => {
     const trimmedPrompt = prompt.trim();
     const hasAttachments = attachments.length > 0;
 
@@ -91,7 +91,8 @@ export function usePromptActions(sendEvent: (event: ClientEvent) => void) {
           model: sessionModel || undefined,
           temperature: sendTemperature ? selectedTemperature : undefined,
           enableSessionGitRepo: options?.enableSessionGitRepo ?? apiSettings?.enableSessionGitRepo ?? false,
-          attachments: hasAttachments ? attachments : undefined
+          attachments: hasAttachments ? attachments : undefined,
+          charter: options?.charter
         }
       });
       // Save model id for future sessions (provider IDs keep :: form)
@@ -132,7 +133,7 @@ export function usePromptActions(sendEvent: (event: ClientEvent) => void) {
     sendEvent({ type: "session.stop", payload: { sessionId: activeSessionId } });
   }, [activeSessionId, sendEvent]);
 
-  const handleStartFromModal = useCallback((options?: { enableSessionGitRepo?: boolean }) => {
+  const handleStartFromModal = useCallback((options?: { enableSessionGitRepo?: boolean; charter?: CharterData }) => {
     // Allow starting chat without cwd or prompt
     // If no cwd, file operations will be blocked by tools-executor
     handleSend(options);
@@ -372,7 +373,8 @@ export function PromptInput({ sendEvent }: PromptInputProps) {
     }
 
     const hasText = e.clipboardData?.types?.includes("text/plain");
-    if (!hasText) e.preventDefault();
+    if (hasText) return;
+    e.preventDefault();
 
     void (async () => {
       const file = await readImageFromClipboardApi();

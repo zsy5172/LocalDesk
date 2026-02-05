@@ -24,6 +24,10 @@ All tools follow snake_case naming convention: verb_noun (e.g., read_file, searc
 - Always prefer specific tools over general ones (e.g., read_file for text, read_document for PDF/DOCX)
 - For multi-step tasks, use manage_todos to track progress
 
+**Session Charter (manage_charter) - IMPORTANT:**
+- If the user asks to set/update the session goal (e.g. "设定目标为..." / "set the goal to...") or change constraints/definition-of-done, you MUST call `manage_charter` to persist the change.
+- Do NOT just acknowledge in text; ensure the charter is actually updated so the UI reflects it.
+
 **🌐 Web Search (search_web) - USE IMMEDIATELY when:**
 - User asks about NEWS, updates, recent events, current information
 - User asks to "find", "search", "look up" information about external topics

@@ -52,6 +52,12 @@ export * from "./git-tool.js";
 // Skills tool (Agent Skills integration)
 export * from "./skills-tool.js";
 
+// Charter tool (Session scope management)
+export * from "./charter-tool.js";
+
+// ADR tool (Architecture Decision Records)
+export * from "./adr-tool.js";
+
 // Tool definitions array
 import { BashToolDefinition } from "./bash-tool.js";
 import { ReadToolDefinition } from "./read-tool.js";
@@ -76,6 +82,8 @@ import { ALL_SEARCH_TOOL_DEFINITIONS } from "./duckduckgo-search-tool.js";
 import { SkillsToolDefinition } from "./skills-tool.js";
 import { transcribeAudioDefinition } from "./transcribe-audio-tool.js";
 import { generateImageDefinition } from "./image-generation-tool.js";
+import { CharterToolDefinition } from "./charter-tool.js";
+import { ADRToolDefinition } from "./adr-tool.js";
 
 const electronOnlyToolDefinitions: any[] = [];
 
@@ -104,4 +112,6 @@ export const ALL_TOOL_DEFINITIONS = [
   SkillsToolDefinition,
   transcribeAudioDefinition,
   generateImageDefinition,
+  CharterToolDefinition,
+  ADRToolDefinition,
 ];

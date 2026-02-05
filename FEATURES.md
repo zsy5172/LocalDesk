@@ -140,6 +140,25 @@
 | `manage_todos` | Визуальный todo-panel с прогрессом |
 | `load_skill` | Загрузка специализированных инструкций |
 
+### 📋 Charter & ADR (Session Themed Workspace)
+
+| Tool | Описание |
+|------|----------|
+| `manage_charter` | Управление Charter (цели, ограничения, DoD) |
+| `manage_adr` | Архитектурные решения (ADR) |
+
+**Charter** — определяет границы сессии:
+- Goal, Non-Goals, Definition of Done
+- Constraints (soft) и Invariants (hard)
+- Glossary терминов
+
+**ADR** — записи архитектурных решений:
+- Автоматически создаются при изменении Charter
+- Типы: architectural, technical, process, charter-change
+- Статусы: proposed → accepted/rejected/deprecated
+
+См. [docs/charter-system.md](docs/charter-system.md) и [docs/adr-guide.md](docs/adr-guide.md).
+
 ---
 
 ## 🗓️ Scheduler (NEW in v0.0.8)

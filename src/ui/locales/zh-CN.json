@@ -56,6 +56,7 @@
     "sessionMenuLabel": "打开会话菜单",
     "pinSession": "置顶会话",
     "unpinSession": "取消置顶会话",
+    "cloneSession": "克隆会话",
     "deleteSession": "删除此会话"
   },
   "prompt": {

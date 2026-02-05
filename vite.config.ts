@@ -14,6 +14,7 @@ export default defineConfig(({ mode }) => {
 			outDir: 'dist-react',
 		},
 		server: {
+			host: 'localhost',
 			port, // MUST BE LOWERCASE
 			strictPort: true,
 		},

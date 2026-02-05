@@ -5,7 +5,7 @@
  */
 
 import crypto from "crypto";
-import type { SessionStatus, StreamMessage, FileChange } from "../agent/types.js";
+import type { SessionStatus, StreamMessage, FileChange, CharterData, ADRItem } from "../agent/types.js";
 
 export type PendingPermission = {
   toolUseId: string;
@@ -30,6 +30,11 @@ export type Session = {
   abortController?: AbortController;
   inputTokens?: number;
   outputTokens?: number;
+  // Charter system fields
+  charter?: CharterData;
+  charterHash?: string;
+  // ADR system fields
+  adrs?: ADRItem[];
 };
 
 export type StoredSession = {
@@ -48,6 +53,11 @@ export type StoredSession = {
   outputTokens?: number;
   enableSessionGitRepo?: boolean; // Per-session git versioning setting
   fileChanges?: FileChange[];
+  // Charter system fields
+  charter?: CharterData;
+  charterHash?: string;
+  // ADR system fields
+  adrs?: ADRItem[];
 };
 
 export type TodoItem = {
@@ -246,6 +256,9 @@ export class MemorySessionStore {
     if (updates.model !== undefined) syncUpdates.model = updates.model;
     if (updates.inputTokens !== undefined) syncUpdates.inputTokens = session.inputTokens;
     if (updates.outputTokens !== undefined) syncUpdates.outputTokens = session.outputTokens;
+    if (updates.charter !== undefined) syncUpdates.charter = updates.charter;
+    if (updates.charterHash !== undefined) syncUpdates.charterHash = updates.charterHash;
+    if (updates.adrs !== undefined) syncUpdates.adrs = updates.adrs;
     
     if (Object.keys(syncUpdates).length > 0) {
       this.syncCallback?.('update', id, syncUpdates);

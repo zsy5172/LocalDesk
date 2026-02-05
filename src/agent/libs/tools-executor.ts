@@ -63,6 +63,8 @@ import {
   executeSearchImagesTool,
 } from "./tools/duckduckgo-search-tool.js";
 import { SkillsTool } from "./tools/skills-tool.js";
+import { executeCharterTool } from "./tools/charter-tool.js";
+import { executeADRTool } from "./tools/adr-tool.js";
 
 export { ToolResult };
 
@@ -340,6 +342,12 @@ export class ToolExecutor {
 
         case "manage_todos":
           return await executeManageTodosTool(args as any, context);
+
+        case "manage_charter":
+          return await executeCharterTool(args as any, context);
+
+        case "manage_adr":
+          return await executeADRTool(args as any, context);
 
         case "git_status":
           return await executeGitStatusTool(args as any, context);

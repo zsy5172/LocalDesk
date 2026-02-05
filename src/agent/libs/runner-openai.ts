@@ -14,11 +14,24 @@ import { getInitialPrompt, getSystemPrompt } from "./prompt-loader.js";
 import { getTodosSummary, getTodos, setTodos, clearTodos } from "./tools/manage-todos-tool.js";
 import { ToolExecutor } from "./tools-executor.js";
 import type { FileChange } from "../types.js";
-import { writeFileSync, existsSync, mkdirSync } from "fs";
+import { writeFileSync, existsSync, mkdirSync, readFileSync } from "fs";
 import { isGitRepo, getRelativePath, getFileDiffStats } from "../git-utils.js";
-import { join } from "path";
+import { join, resolve } from "path";
 import { homedir } from "os";
 import { executionLogger } from "./execution-logger.js";
+import {
+  createChangePreview,
+  createPreviewBatch,
+  requestPreviewApproval,
+  type PreviewBatchResult
+} from "./preview-manager.js";
+import { validateSession, formatValidationResult } from "./session-validation.js";
+import { 
+  checkActionCompliance, 
+  createActionIntent, 
+  formatComplianceResult,
+  type ComplianceResult 
+} from "./compliance-gate.js";
 import {
   DEFAULT_CONTEXT_CONFIG,
   estimateTokensForChatMessages,
@@ -68,6 +81,8 @@ export type RunnerOptions = {
 export type RunnerHandle = {
   abort: () => void;
   resolvePermission: (toolUseId: string, approved: boolean) => void;
+  resolvePreviewApproval: (approval: any) => void;
+  resolvePreviewBatchApproval: (batchApproval: any) => void;
 };
 
 const DEFAULT_CWD = process.cwd();
@@ -168,6 +183,38 @@ export async function runOpenAI(options: RunnerOptions): Promise<RunnerHandle> {
   // They will be restored from DB if this is an existing session
   clearTodos(session.id);
 
+  // Session startup validation (Charter + ADR integrity)
+  const sessionStore = (global as any).sessionStore;
+  const sessionData = typeof sessionStore?.getSession === 'function'
+    ? sessionStore.getSession(session.id)
+    : undefined;
+  if (sessionData) {
+    const validationResult = validateSession({
+      charter: sessionData.charter,
+      charterHash: sessionData.charterHash,
+      adrs: sessionData.adrs
+    });
+    
+    if (!validationResult.valid) {
+      // Log validation errors but don't block execution
+      console.warn('[runner] Session validation failed:', validationResult.errors);
+      onEvent({
+        type: "stream.message" as any,
+        payload: {
+          sessionId: session.id,
+          message: {
+            type: 'system',
+            subtype: 'warning',
+            text: formatValidationResult(validationResult)
+          } as any
+        }
+      });
+    } else if (validationResult.warnings.length > 0) {
+      // Log warnings
+      console.log('[runner] Session validation warnings:', validationResult.warnings);
+    }
+  }
+
   // Permission tracking
   const pendingPermissions = new Map<string, { resolve: (approved: boolean) => void }>();
 
@@ -180,9 +227,9 @@ export async function runOpenAI(options: RunnerOptions): Promise<RunnerHandle> {
 
   // Save to DB without triggering UI updates
   const saveToDb = (type: string, content: any) => {
-    const sessionStore = (global as any).sessionStore;
-    if (sessionStore && session.id) {
-      sessionStore.recordMessage(session.id, { type, ...content });
+    const sessionStoreLocal = (global as any).sessionStore;
+    if (sessionStoreLocal && session.id) {
+      sessionStoreLocal.recordMessage(session.id, { type, ...content });
     }
   };
 
@@ -868,6 +915,7 @@ export async function runOpenAI(options: RunnerOptions): Promise<RunnerHandle> {
 
           for (let attempt = 0; attempt <= MAX_STREAM_RETRIES; attempt++) {
             let assistantMessage = '';
+            let assistantThinking = '';
             let toolCalls: any[] = [];
             let contentStarted = false;
             let streamMetadata: { id?: string; model?: string; created?: number; finishReason?: string; usage?: any } = {};
@@ -907,6 +955,11 @@ export async function runOpenAI(options: RunnerOptions): Promise<RunnerHandle> {
 
                 const delta = chunk.choices[0]?.delta;
                 if (!delta) continue;
+
+                const thinkingDelta = (delta as any).thinking ?? (delta as any).reasoning ?? (delta as any).reasoning_content;
+                if (typeof thinkingDelta === 'string' && thinkingDelta) {
+                  assistantThinking += thinkingDelta;
+                }
 
                 if (delta.content) {
                   if (!contentStarted) {
@@ -965,7 +1018,7 @@ export async function runOpenAI(options: RunnerOptions): Promise<RunnerHandle> {
                 });
               }
 
-              return { assistantMessage, toolCalls, streamMetadata };
+              return { assistantMessage, assistantThinking, toolCalls, streamMetadata };
             } catch (error) {
               lastError = error;
               const retryable = isRetryableNetworkError(error);
@@ -996,7 +1049,7 @@ export async function runOpenAI(options: RunnerOptions): Promise<RunnerHandle> {
           throw lastError ?? new Error('Unknown stream error');
         };
 
-        const { assistantMessage, toolCalls, streamMetadata } = await runStreamWithRetries();
+        const { assistantMessage, assistantThinking, toolCalls, streamMetadata } = await runStreamWithRetries();
 
         // Check if aborted during stream
         if (aborted) {
@@ -1020,6 +1073,26 @@ export async function runOpenAI(options: RunnerOptions): Promise<RunnerHandle> {
           totalOutputTokens += streamMetadata.usage.completion_tokens || 0;
         }
         
+        const normalizedToolCalls = toolCalls.filter(Boolean);
+
+        if (assistantThinking?.trim()) {
+          const MAX_THINKING_CHARS = 50_000;
+          const truncatedThinking = assistantThinking.length > MAX_THINKING_CHARS
+            ? assistantThinking.slice(0, MAX_THINKING_CHARS) + `\n... [truncated ${assistantThinking.length - MAX_THINKING_CHARS} chars]`
+            : assistantThinking;
+          executionLogger.logReasoning(truncatedThinking, `iteration=${iterationCount} model=${modelName}`);
+        }
+
+        executionLogger.logLLMResponse({
+          finishReason: streamMetadata.finishReason || '',
+          textLength: assistantMessage.length,
+          toolCallsCount: normalizedToolCalls.length,
+          thinkingLength: assistantThinking?.length || 0,
+          inputTokens: streamMetadata.usage?.prompt_tokens,
+          outputTokens: streamMetadata.usage?.completion_tokens,
+          durationMs: Date.now() - iterationStartTime
+        });
+
         // Log response to file
         const responsePayload = {
           id: streamMetadata.id,
@@ -1029,8 +1102,9 @@ export async function runOpenAI(options: RunnerOptions): Promise<RunnerHandle> {
           message: {
             role: 'assistant',
             content: assistantMessage || null,
-            tool_calls: toolCalls.length > 0 ? toolCalls : undefined
+            tool_calls: normalizedToolCalls.length > 0 ? normalizedToolCalls : undefined
           },
+          thinking: assistantThinking || undefined,
           timestamp: new Date().toISOString()
         };
         logTurn(session.id, iterationCount, 'response', responsePayload);
@@ -1336,6 +1410,140 @@ export async function runOpenAI(options: RunnerOptions): Promise<RunnerHandle> {
           }
           // In default mode, execute immediately without asking
 
+          // Compliance gate: check action against charter constraints
+          const currentSessionData = typeof sessionStore?.getSession === 'function'
+            ? sessionStore.getSession(session.id)
+            : undefined;
+          if (currentSessionData?.charter) {
+            const actionIntent = createActionIntent(toolName, toolArgs);
+            const complianceResult: ComplianceResult = checkActionCompliance(actionIntent, {
+              charter: currentSessionData.charter,
+              adrs: currentSessionData.adrs
+            });
+            
+            if (!complianceResult.allowed) {
+              // Hard fail: block execution
+              console.log(`[Compliance] Action blocked:`, complianceResult.reason);
+              
+              executionLogger.logToolExecution({
+                toolName,
+                toolUseId,
+                input: toolArgs,
+                status: 'error',
+                error: `Compliance check failed: ${complianceResult.reason}`,
+                durationMs: Date.now() - toolStartTime
+              });
+              
+              // Notify user
+              sendMessage('system', { 
+                subtype: 'warning', 
+                text: formatComplianceResult(complianceResult) 
+              });
+              
+              toolResults.push({
+                role: 'tool',
+                tool_call_id: toolCall.id,
+                name: toolName,
+                content: `Error: ${formatComplianceResult(complianceResult)}`
+              });
+              
+              continue; // Skip this tool
+            }
+            
+            if (complianceResult.status === 'soft_fail') {
+              // Soft fail: warn but continue
+              console.log(`[Compliance] Soft warning:`, complianceResult.warnings);
+              sendMessage('system', { 
+                subtype: 'info', 
+                text: `⚠️ Compliance note: ${complianceResult.reason}` 
+              });
+            }
+          }
+
+          // Preview system: check if file modification tools need preview approval
+          const previewTools = ['write_file', 'edit_file'];
+          if (previewTools.includes(toolName) && currentSettings?.enablePreview && currentSettings?.previewMode !== 'never') {
+            const filePath = toolArgs.file_path || toolArgs.path;
+            const cwd = session.cwd || '';
+            
+            let oldContent = '';
+            let newContent = toolArgs.content || '';
+            let previewType: 'file_edit' | 'file_create' = 'file_create';
+            
+            try {
+              if (toolName === 'edit_file' && cwd && filePath) {
+                const fullPath = resolve(cwd, filePath);
+                if (existsSync(fullPath)) {
+                  oldContent = readFileSync(fullPath, 'utf-8');
+                  // Apply the edit to get new content
+                  if (oldContent.includes(toolArgs.old_string)) {
+                    newContent = oldContent.replace(toolArgs.old_string, toolArgs.new_string);
+                    previewType = 'file_edit';
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn(`[Preview] Failed to read file for preview: ${e}`);
+            }
+            
+            // Create preview
+            const preview = createChangePreview(previewType, filePath, {
+              before: oldContent,
+              after: newContent,
+              description: toolArgs.explanation,
+            });
+            
+            const batch = createPreviewBatch(session.id, toolCall.id, toolName, [preview]);
+            
+            console.log(`[Preview] Requesting approval for ${toolName}:`, filePath);
+            
+            // Request approval and wait
+            const previewResult: PreviewBatchResult = await requestPreviewApproval(batch, onEvent);
+            
+            if (aborted) {
+              break;
+            }
+            
+            if (!previewResult.approved) {
+              console.log(`[Preview] ${toolName} rejected by user`);
+              
+              // Log preview rejection
+              executionLogger.logToolExecution({
+                toolName,
+                toolUseId,
+                input: toolArgs,
+                status: 'error',
+                error: 'Preview rejected by user',
+                durationMs: Date.now() - toolStartTime
+              });
+              
+              toolResults.push({
+                role: 'tool',
+                tool_call_id: toolCall.id,
+                name: toolName,
+                content: 'Error: File change rejected by user during preview'
+              });
+              
+              continue;
+            }
+            
+            // Check if user modified the content
+            const previewItem = previewResult.previews[0];
+            if (previewItem?.action === 'approve_modified' && previewItem.content) {
+              console.log(`[Preview] User modified content for ${toolName}`);
+              if (toolName === 'write_file') {
+                toolArgs.content = previewItem.content;
+              } else if (toolName === 'edit_file') {
+                // For edit_file, user modified the final result
+                // We need to recalculate old_string/new_string or use write mode
+                toolArgs.content = previewItem.content;
+                toolArgs._use_write_mode = true;
+              }
+            }
+            
+            console.log(`[Preview] ${toolName} approved, proceeding with execution`);
+          }
+
           // Execute tool with callback for todos persistence
           // CRITICAL: Force flush stdout to ensure logs are visible
           console.log(`[OpenAI Runner] ========== EXECUTING TOOL ==========`);
@@ -1358,6 +1566,50 @@ export async function runOpenAI(options: RunnerOptions): Promise<RunnerHandle> {
                 type: 'todos.updated',
                 payload: { sessionId: session.id, todos }
               });
+            },
+            onCharterChanged: (charter, charterHash) => {
+              // Emit session status update with new charter
+              const updatedSession = typeof sessionStore?.getSession === 'function'
+                ? sessionStore.getSession(session.id)
+                : undefined;
+              if (updatedSession) {
+                onEvent({
+                  type: 'session.status',
+                  payload: {
+                    sessionId: session.id,
+                    status: updatedSession.status,
+                    title: updatedSession.title,
+                    cwd: updatedSession.cwd,
+                    model: updatedSession.model,
+                    temperature: updatedSession.temperature,
+                    charter,
+                    charterHash,
+                    adrs: updatedSession.adrs
+                  }
+                });
+              }
+            },
+            onADRsChanged: (adrs) => {
+              // Emit session status update with new ADRs
+              const updatedSession = typeof sessionStore?.getSession === 'function'
+                ? sessionStore.getSession(session.id)
+                : undefined;
+              if (updatedSession) {
+                onEvent({
+                  type: 'session.status',
+                  payload: {
+                    sessionId: session.id,
+                    status: updatedSession.status,
+                    title: updatedSession.title,
+                    cwd: updatedSession.cwd,
+                    model: updatedSession.model,
+                    temperature: updatedSession.temperature,
+                    charter: updatedSession.charter,
+                    charterHash: updatedSession.charterHash,
+                    adrs
+                  }
+                });
+              }
             }
           });
 
@@ -1647,6 +1899,15 @@ DO NOT call the same tool again with similar arguments.`
     },
     resolvePermission: (toolUseId: string, approved: boolean) => {
       resolvePermission(toolUseId, approved);
+    },
+    resolvePreviewApproval: (approval: any) => {
+      // Import at runtime to avoid circular dependency
+      const { handlePreviewApproval } = require("./preview-manager.js");
+      handlePreviewApproval(approval);
+    },
+    resolvePreviewBatchApproval: (batchApproval: any) => {
+      const { handleBatchApproval } = require("./preview-manager.js");
+      handleBatchApproval(batchApproval);
     }
   };
 }
