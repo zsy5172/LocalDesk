@@ -58,6 +58,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
   const [enableSessionGitRepo, setEnableSessionGitRepo] = useState(currentSettings?.enableSessionGitRepo ?? false);
   const [enablePreview, setEnablePreview] = useState(currentSettings?.enablePreview ?? false);
   const [previewMode, setPreviewMode] = useState<'always' | 'ask' | 'never'>(currentSettings?.previewMode ?? 'always');
+  const [language, setLanguage] = useState<ApiSettings["language"]>(currentSettings?.language || "auto");
   const [sessionGitChecking, setSessionGitChecking] = useState(false);
   const [sessionGitError, setSessionGitError] = useState<string | null>(null);
   const [memoryLoading, setMemoryLoading] = useState(false);
@@ -172,6 +173,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       setEnableSessionGitRepo(currentSettings.enableSessionGitRepo ?? false);
       setEnablePreview(currentSettings.enablePreview ?? false);
       setPreviewMode(currentSettings.previewMode ?? 'always');
+      setLanguage(currentSettings.language || "auto");
       setSessionGitChecking(false);
       setSessionGitError(null);
     }
@@ -1662,33 +1664,6 @@ function ToolsTab({
             <div className="w-11 h-6 bg-ink-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-ink-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
           </div>
         </label>
-
-        {/* Diff Source */}
-        <div className="border-t border-ink-900/10 pt-4 mt-4">
-          <label className="block text-sm font-medium text-ink-700 mb-3">
-            Diff Source
-            <span className="ml-2 text-xs font-normal text-ink-500">Choose how to get old file version for diff</span>
-          </label>
-          <label className="flex items-center justify-between cursor-pointer">
-            <div className="flex-1">
-              <span className="block text-sm font-medium text-ink-700">Use Git for Diff</span>
-              <p className="mt-0.5 text-xs text-ink-500">
-                {useGitForDiff 
-                  ? "Using git HEAD version for old file content (requires git repo)"
-                  : "Using file snapshots for old file content (works without git)"}
-              </p>
-            </div>
-            <div className="relative">
-              <input
-                type="checkbox"
-                checked={useGitForDiff}
-                onChange={(e) => setUseGitForDiff(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-ink-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-ink-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
-            </div>
-          </label>
-        </div>
 
         {/* Preview System */}
         <div className="border-t border-ink-900/10 pt-4 mt-4">

@@ -5,6 +5,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { diffLines as computeDiffLines } from "diff";
 import type { ChangedFile } from "./ChangedFiles";
 import { getPlatform } from "../platform";
+import { useAppStore } from "../store/useAppStore";
 
 // Check which platform is being used
 const isTauri = typeof (window as any).__TAURI__ !== "undefined";
@@ -28,7 +29,7 @@ interface DiffLineItem {
   newLineNumber?: number;
 }
 
-export function DiffViewerModal({ file, files = [], cwd, open, onClose, onFileChange }: DiffViewerModalProps) {
+export function DiffViewerModal({ file, files = [], cwd, sessionId, open, onClose, onFileChange }: DiffViewerModalProps) {
   const { t } = useTranslation();
   const [oldContent, setOldContent] = useState<string>("");
   const [newContent, setNewContent] = useState<string>("");
@@ -36,7 +37,13 @@ export function DiffViewerModal({ file, files = [], cwd, open, onClose, onFileCh
   const [error, setError] = useState<string | null>(null);
   const [currentChangeBlockIndex, setCurrentChangeBlockIndex] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const useGitForDiff = true;
+  
+  // Align diff source with session git setting (per-session override, then global default)
+  const apiSettings = useAppStore((state) => state.apiSettings);
+  const sessionGitEnabled = useAppStore((state) =>
+    sessionId ? state.sessions[sessionId]?.enableSessionGitRepo : undefined
+  );
+  const useGitForDiff = sessionGitEnabled ?? apiSettings?.enableSessionGitRepo ?? false;
 
   // Find current file index in files array
   const currentFileIndex = useMemo(() => {
