@@ -141,7 +141,7 @@
       "llmModels": "LLM & Models",
       "webTools": "Web Reader & Search",
       "tools": "Tools",
-      "language": "Language",
+      "language": "Interface",
       "skills": "Skills",
       "memoryMode": "Memory & Mode"
     },
@@ -151,6 +151,13 @@
       "auto": "Auto",
       "english": "English",
       "chinese": "简体中文"
+    },
+    "interfaceTheme": {
+      "label": "Interface Color",
+      "hint": "Auto switches based on local time",
+      "auto": "Auto",
+      "light": "Light",
+      "dark": "Dark"
     },
     "conversationDir": {
       "label": "Conversation Data Directory",

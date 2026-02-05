@@ -17,6 +17,7 @@ import { SkillsTab } from "./SkillsTab";
 import { getPlatform } from "../platform";
 import { useAppStore } from "../store/useAppStore";
 import { applyLanguageSetting } from "../i18n";
+import { applyInterfaceTheme } from "../theme";
 
 type SettingsModalProps = {
   onClose: () => void;
@@ -59,6 +60,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
   const [enablePreview, setEnablePreview] = useState(currentSettings?.enablePreview ?? false);
   const [previewMode, setPreviewMode] = useState<'always' | 'ask' | 'never'>(currentSettings?.previewMode ?? 'always');
   const [language, setLanguage] = useState<ApiSettings["language"]>(currentSettings?.language || "auto");
+  const [interfaceTheme, setInterfaceTheme] = useState<ApiSettings["interfaceTheme"]>(currentSettings?.interfaceTheme || "auto");
   const [sessionGitChecking, setSessionGitChecking] = useState(false);
   const [sessionGitError, setSessionGitError] = useState<string | null>(null);
   const [memoryLoading, setMemoryLoading] = useState(false);
@@ -174,6 +176,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       setEnablePreview(currentSettings.enablePreview ?? false);
       setPreviewMode(currentSettings.previewMode ?? 'always');
       setLanguage(currentSettings.language || "auto");
+      setInterfaceTheme(currentSettings.interfaceTheme || "auto");
       setSessionGitChecking(false);
       setSessionGitError(null);
     }
@@ -338,6 +341,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       enableFetchTools,
       enableImageTools,
       language,
+      interfaceTheme,
       llmProviders: llmProviderSettings,
       conversationDataDir: conversationDataDir.trim() || undefined,
       enableSessionGitRepo,
@@ -384,7 +388,9 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
     setConversationDataDir("");
     setEnableSessionGitRepo(false);
     setLanguage("auto");
+    setInterfaceTheme("auto");
     applyLanguageSetting("auto");
+    applyInterfaceTheme("auto");
     setSessionGitChecking(false);
     setSessionGitError(null);
   };
@@ -392,6 +398,11 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
   const handleLanguageChange = useCallback((nextLanguage: ApiSettings["language"]) => {
     setLanguage(nextLanguage);
     applyLanguageSetting(nextLanguage);
+  }, []);
+
+  const handleInterfaceThemeChange = useCallback((nextTheme: ApiSettings["interfaceTheme"]) => {
+    setInterfaceTheme(nextTheme || "auto");
+    applyInterfaceTheme(nextTheme || "auto");
   }, []);
 
   useEffect(() => {
@@ -539,9 +550,11 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
                 setPreviewMode={setPreviewMode}
               />
             ) : activeTab === 'language' ? (
-              <LanguageTab
+              <InterfaceTab
                 language={language}
                 onLanguageChange={handleLanguageChange}
+                interfaceTheme={interfaceTheme}
+                onInterfaceThemeChange={handleInterfaceThemeChange}
               />
             ) : activeTab === 'skills' ? (
               <div className="p-6">
@@ -586,7 +599,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
             </button>
             <button
               onClick={handleSave}
-              className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-ink-900 rounded-lg hover:bg-ink-800 transition-colors"
+              className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-accent rounded-lg hover:bg-accent-hover transition-colors"
             >
               {t("common.save")}
             </button>
@@ -1428,7 +1441,17 @@ function WebToolsTab({
   );
 }
 
-function LanguageTab({ language, onLanguageChange }: { language: ApiSettings["language"]; onLanguageChange: (language: ApiSettings["language"]) => void; }) {
+function InterfaceTab({
+  language,
+  onLanguageChange,
+  interfaceTheme,
+  onInterfaceThemeChange
+}: {
+  language: ApiSettings["language"];
+  onLanguageChange: (language: ApiSettings["language"]) => void;
+  interfaceTheme: ApiSettings["interfaceTheme"];
+  onInterfaceThemeChange: (theme: ApiSettings["interfaceTheme"]) => void;
+}) {
   const { t } = useTranslation();
   return (
     <div className="px-6 py-4 space-y-6">
@@ -1445,6 +1468,21 @@ function LanguageTab({ language, onLanguageChange }: { language: ApiSettings["la
           <option value="auto">{t("settings.language.auto")}</option>
           <option value="en">{t("settings.language.english")}</option>
           <option value="zh-CN">{t("settings.language.chinese")}</option>
+        </select>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-ink-700 mb-2">
+          {t("settings.interfaceTheme.label")}
+          <span className="ml-2 text-xs font-normal text-ink-500">{t("settings.interfaceTheme.hint")}</span>
+        </label>
+        <select
+          value={interfaceTheme || "auto"}
+          onChange={(e) => onInterfaceThemeChange?.(e.target.value as ApiSettings["interfaceTheme"])}
+          className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all"
+        >
+          <option value="auto">{t("settings.interfaceTheme.auto")}</option>
+          <option value="light">{t("settings.interfaceTheme.light")}</option>
+          <option value="dark">{t("settings.interfaceTheme.dark")}</option>
         </select>
       </div>
     </div>

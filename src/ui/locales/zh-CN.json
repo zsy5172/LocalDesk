@@ -141,7 +141,7 @@
       "llmModels": "LLM 与模型",
       "webTools": "网页阅读与搜索",
       "tools": "工具",
-      "language": "语言",
+      "language": "界面",
       "skills": "技能",
       "memoryMode": "记忆与模式"
     },
@@ -151,6 +151,13 @@
       "auto": "自动",
       "english": "English",
       "chinese": "简体中文"
+    },
+    "interfaceTheme": {
+      "label": "界面颜色",
+      "hint": "自动模式根据系统时间切换明亮/暗黑",
+      "auto": "自动",
+      "light": "明亮",
+      "dark": "暗黑"
     },
     "conversationDir": {
       "label": "对话数据目录",

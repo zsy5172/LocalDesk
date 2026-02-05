@@ -329,6 +329,7 @@ export type ApiSettings = {
   // Preview system settings
   enablePreview?: boolean; // Enable preview mode for file changes (default: false)
   previewMode?: 'always' | 'ask' | 'never'; // When to show preview: always, ask (per-tool), never
+  interfaceTheme?: 'light' | 'dark' | 'auto'; // UI theme selection
 };
 
 export type ModelInfo = {

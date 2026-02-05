@@ -20,6 +20,7 @@ import MDContent from "./render/markdown";
 import { getPlatform } from "./platform";
 import { basenameFsPath } from "./platform/fs-path";
 import { applyLanguageSetting } from "./i18n";
+import { applyInterfaceTheme } from "./theme";
 
 function App() {
   const { t } = useTranslation();
@@ -130,6 +131,7 @@ function App() {
     if (event.type === "settings.loaded") {
       setApiSettings(event.payload.settings);
       applyLanguageSetting(event.payload.settings?.language);
+      applyInterfaceTheme(event.payload.settings?.interfaceTheme);
       setSettingsLoaded(true);
     }
     
@@ -379,7 +381,12 @@ function App() {
     sendEvent({ type: "settings.save", payload: { settings } });
     setApiSettings(settings);
     applyLanguageSetting(settings.language);
+    applyInterfaceTheme(settings.interfaceTheme);
   }, [sendEvent]);
+
+  useEffect(() => {
+    applyInterfaceTheme("auto");
+  }, []);
 
   const handleConfirmChanges = useCallback((sessionId: string) => {
     sendEvent({ type: "file_changes.confirm", payload: { sessionId } });

@@ -895,6 +895,8 @@ pub struct ApiSettings {
     pub enable_preview: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preview_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interface_theme: Option<String>,
     // Add other settings as needed
 }
 

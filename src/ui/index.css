@@ -47,6 +47,58 @@
   --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.12);
 }
 
+:root {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+
+  /* Surface colors */
+  --color-surface: #0F0F0D;
+  --color-surface-secondary: #151412;
+  --color-surface-tertiary: #1D1B18;
+  --color-surface-cream: #131210;
+
+  /* Ink colors */
+  --color-ink-900: #F4F2ED;
+  --color-ink-800: #E1DFD8;
+  --color-ink-700: #C7C4BB;
+  --color-ink-600: #A9A59C;
+  --color-ink-500: #8D887F;
+  --color-ink-400: #6F6B63;
+
+  /* Muted colors */
+  --color-muted: #A3A097;
+  --color-muted-light: #7D786F;
+
+  /* Accent colors */
+  --color-accent: #D97757;
+  --color-accent-hover: #E07F62;
+  --color-accent-light: #4B2A23;
+  --color-accent-subtle: #1F1715;
+
+  /* Status colors */
+  --color-error: #EF4444;
+  --color-error-light: #3A1A1A;
+  --color-success: #22C55E;
+  --color-success-light: #15341F;
+  --color-info: #3B82F6;
+  --color-info-light: #152648;
+
+  /* Background colors */
+  --color-bg-000: #0F0F0D;
+  --color-bg-100: #131210;
+  --color-bg-200: #151412;
+  --color-bg-300: #1D1B18;
+  --color-bg-400: #23211D;
+
+  /* Shadows */
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.6);
+  --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.7);
+}
+
 /* Custom select styling for Tauri WebView */
 select {
   -webkit-appearance: none;
@@ -68,6 +120,42 @@ select option {
   background-color: #FFFFFF;
   color: var(--color-ink-900);
   padding: 8px 12px;
+}
+
+.dark select {
+  background-color: #1D1B18;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23C7C4BB' d='M2.5 4.5L6 8l3.5-3.5'/%3E%3C/svg%3E");
+}
+
+.dark select option {
+  background-color: #151412;
+  color: var(--color-ink-900);
+}
+
+.dark input,
+.dark textarea {
+  background-color: #1D1B18;
+  color: var(--color-ink-900);
+  border-color: rgba(244, 242, 237, 0.16);
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: var(--color-ink-500);
+}
+
+.dark .bg-white {
+  background-color: #151412;
+}
+
+.dark .hljs,
+.dark pre code.hljs {
+  color: #E6E1D5 !important;
+  background: transparent !important;
+}
+
+.dark .hljs * {
+  color: inherit !important;
 }
 
 pre code.hljs {
@@ -125,6 +213,14 @@ code, pre, textarea.mono, input.mono {
   background: #9B9B96;
 }
 
+.dark ::-webkit-scrollbar-thumb {
+  background: #3A3833;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #4B4842;
+}
+
 /* Shimmer animation for partial message loading */
 @keyframes shimmer {
   0% { transform: translateX(-120%); }
@@ -158,4 +254,16 @@ code, pre, textarea.mono, input.mono {
 
 .todo-scroll-container::-webkit-scrollbar-thumb:hover {
   background: #6b7280;
+}
+
+.dark .todo-scroll-container::-webkit-scrollbar-track {
+  background: #1D1B18;
+}
+
+.dark .todo-scroll-container::-webkit-scrollbar-thumb {
+  background: #3A3833;
+}
+
+.dark .todo-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: #4B4842;
 }

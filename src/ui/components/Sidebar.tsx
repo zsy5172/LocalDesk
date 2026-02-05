@@ -111,7 +111,7 @@ export function Sidebar({
 
 
   return (
-    <aside className="fixed inset-y-0 left-0 flex h-full w-[280px] flex-col gap-4 border-r border-ink-900/5 bg-[#FAF9F6] px-4 pb-4 pt-12">
+    <aside className="fixed inset-y-0 left-0 flex h-full w-[280px] flex-col gap-4 border-r border-ink-900/5 bg-surface-cream px-4 pb-4 pt-12">
       <div 
         className="absolute top-0 left-0 right-0 h-12"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
