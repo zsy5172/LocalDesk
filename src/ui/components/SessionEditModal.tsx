@@ -209,7 +209,7 @@ export function SessionEditModal({
           </button>
           <button
             onClick={handleSave}
-            className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-ink-800 rounded-xl hover:bg-ink-900 transition-colors"
+            className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-accent rounded-xl hover:bg-accent-hover transition-colors"
           >
             {t("common.saveChanges")}
           </button>
