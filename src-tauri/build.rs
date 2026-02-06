@@ -69,6 +69,59 @@ fn set_git_info() {
   // Get build time
   let build_time = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
   println!("cargo:rustc-env=BUILD_TIME={}", build_time);
+
+  // Prefer semantic version from git tag on HEAD (e.g. v1.2.3 or 1.2.3)
+  if let Ok(output) = Command::new("git").args(["tag", "--points-at", "HEAD"]).output() {
+    if output.status.success() {
+      let stdout = String::from_utf8_lossy(&output.stdout);
+      if let Some(version) = stdout
+        .lines()
+        .find_map(|line| normalize_tag_to_version(line.trim()))
+      {
+        println!("cargo:rustc-env=APP_VERSION={}", version);
+      }
+    }
+  }
+}
+
+fn normalize_tag_to_version(tag: &str) -> Option<String> {
+  let trimmed = tag.trim();
+  if trimmed.is_empty() {
+    return None;
+  }
+
+  let candidate = trimmed.strip_prefix('v').unwrap_or(trimmed);
+  if is_semver_like(candidate) {
+    return Some(candidate.to_string());
+  }
+
+  // Backward-compatible tags like `v0.0.9alpha2` -> `0.0.9-alpha2`
+  if let Some(index) = candidate.find(|ch: char| ch.is_ascii_alphabetic()) {
+    let (core, suffix) = candidate.split_at(index);
+    if is_semver_core(core)
+      && suffix.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '.' || ch == '-')
+    {
+      return Some(format!("{}-{}", core, suffix));
+    }
+  }
+  None
+}
+
+fn is_semver_like(version: &str) -> bool {
+  if !is_semver_core(version.split(|ch| ch == '-' || ch == '+').next().unwrap_or("")) {
+    return false;
+  }
+  version.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '.' || ch == '-' || ch == '+')
+}
+
+fn is_semver_core(core: &str) -> bool {
+  let parts: Vec<&str> = core.split('.').collect();
+  if parts.len() != 3 {
+    return false;
+  }
+  !parts
+    .iter()
+    .any(|part| part.is_empty() || !part.chars().all(|ch| ch.is_ascii_digit()))
 }
 
 fn main() {
@@ -76,4 +129,3 @@ fn main() {
   set_git_info();
   tauri_build::build()
 }
-

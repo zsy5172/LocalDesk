@@ -31,7 +31,7 @@ function createCharterItem(content: string, prefix: string): CharterItem {
 }
 
 // Generate charter from template
-function generateCharterFromTemplate(template: CharterTemplate, context?: string): CharterData | undefined {
+function generateCharterFromTemplate(template: CharterTemplate): CharterData | undefined {
   if (template === 'none') return undefined;
   
   const now = Date.now();

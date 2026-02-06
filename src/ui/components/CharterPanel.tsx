@@ -9,18 +9,13 @@ import type { CharterData, CharterItem } from "../types";
 interface CharterPanelProps {
   charter?: CharterData;
   charterHash?: string;
-  isEditable?: boolean;
-  onEditCharter?: (updates: Partial<CharterData>) => void;
 }
 
 export function CharterPanel({
   charter,
-  charterHash,
-  isEditable = false,
-  onEditCharter
+  charterHash
 }: CharterPanelProps) {
   const [isExpanded, setIsExpanded] = useState(false); // Default collapsed to save space
-  const [editingSection, setEditingSection] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
 
   if (!charter) {
@@ -80,8 +75,7 @@ export function CharterPanel({
   const renderSection = (
     title: string,
     icon: string,
-    items: CharterItem[] | undefined,
-    emptyText: string
+    items: CharterItem[] | undefined
   ) => {
     if (!items || items.length === 0) {
       return null;
@@ -175,7 +169,7 @@ export function CharterPanel({
                 <span className="text-xs font-medium text-ink-600 uppercase tracking-wide">Non-Goals</span>
               </div>
               <div className="pl-6">
-                {charter.nonGoals.map((item, idx) => (
+                {charter.nonGoals.map((item) => (
                   <div key={item.id} className="flex items-start gap-2 py-0.5">
                     <span className="text-ink-400">•</span>
                     <span className="text-sm text-ink-600">{item.content}</span>
@@ -186,7 +180,7 @@ export function CharterPanel({
           )}
 
           {/* Definition of Done */}
-          {renderSection('Definition of Done', '✅', charter.definitionOfDone, 'No criteria defined')}
+          {renderSection('Definition of Done', '✅', charter.definitionOfDone)}
 
           {/* Constraints (soft) */}
           {charter.constraints && charter.constraints.length > 0 && (

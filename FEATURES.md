@@ -1,4 +1,4 @@
-# ValeDesk v0.0.8 — Полный список возможностей
+# ValeDesk — Полный список возможностей
 
 > Desktop AI Assistant with Local Model Support
 
@@ -50,7 +50,7 @@
 
 ### Поддерживаемые провайдеры
 - ✅ **Локальные**: vLLM, Ollama, LM Studio
-- ✅ **Облачные**: OpenAI, Anthropic, любой OpenAI-compatible API
+- ✅ **Облачные**: OpenAI, OpenRouter, Z.AI, любой OpenAI-compatible API
 - ✅ **Кастомные**: любой endpoint с `/v1` API
 
 ### Возможности
@@ -63,7 +63,7 @@
 
 ---
 
-## 🛠️ Инструменты (30+)
+## 🛠️ Инструменты
 
 ### 📁 Файловые операции
 
@@ -100,12 +100,16 @@
 | Tool | Описание |
 |------|----------|
 | `search_web` | Интернет поиск (Tavily/Z.AI) |
-| `extract_page` | Полное содержимое страницы |
+| `extract_page` | Полное содержимое страницы (Tavily) |
 | `read_page` | Z.AI Reader |
-| `render_page` | Chromium для SPA/Telegram |
-| `fetch_html` | Загрузка HTML |
-| `fetch_json` | Загрузка и парсинг JSON |
-| `download_file` | Скачивание файлов |
+| `search` | Поиск DuckDuckGo (общий) |
+| `search_news` | Поиск новостей DuckDuckGo |
+| `search_images` | Поиск изображений DuckDuckGo |
+| `fetch_html` | Чтение URL/HTML как текста |
+| `fetch_json` | Загрузка и парсинг JSON API |
+| `download_file` | Скачивание файлов в workspace |
+
+> `render_page` удален вместе с Electron-only зависимостями. Для динамических сайтов используйте `browser_*`.
 
 ### 🌍 Browser Automation
 
@@ -114,8 +118,14 @@
 | `browser_navigate` | Переход по URL |
 | `browser_click` | Клик по элементу |
 | `browser_type` | Ввод текста |
+| `browser_select` | Выбор значения в `<select>` |
+| `browser_hover` | Наведение мыши |
+| `browser_press_key` | Нажатие клавиш |
+| `browser_wait_for` | Ожидание элемента/таймаута |
+| `browser_snapshot` | Accessibility snapshot страницы |
 | `browser_screenshot` | Скриншот страницы |
 | `browser_scroll` | Прокрутка |
+| `browser_execute_script` | Выполнение JS в контексте страницы |
 
 Полная автоматизация через Playwright.
 
@@ -126,11 +136,14 @@
 | `git_status` | Статус репозитория |
 | `git_log` | История коммитов |
 | `git_diff` | Изменения файлов |
+| `git_add` | Добавление файлов в индекс |
 | `git_commit` | Создание коммита |
 | `git_push` | Отправка в remote |
 | `git_pull` | Получение изменений |
 | `git_branch` | Управление ветками |
 | `git_checkout` | Переключение веток |
+| `git_reset` | Сброс состояния репозитория |
+| `git_show` | Просмотр деталей объекта Git |
 
 ### 🧠 Память & Задачи
 
@@ -139,6 +152,13 @@
 | `manage_memory` | Персистентные настройки пользователя |
 | `manage_todos` | Визуальный todo-panel с прогрессом |
 | `load_skill` | Загрузка специализированных инструкций |
+
+### 🎙️ Мультимодальность
+
+| Tool | Описание |
+|------|----------|
+| `transcribe_audio` | Транскрибация аудио (Whisper, до 25MB) |
+| `generate_image` | Генерация/редактирование изображений (DALL-E) |
 
 ### 📋 Charter & ADR (Session Themed Workspace)
 
@@ -154,14 +174,19 @@
 
 **ADR** — записи архитектурных решений:
 - Автоматически создаются при изменении Charter
-- Типы: architectural, technical, process, charter-change
-- Статусы: proposed → accepted/rejected/deprecated
+- Типы: architectural, technical, process, charter-change, constraint-override, user-override
+- Статусы: proposed → accepted/rejected/deprecated/superseded
+
+**Compliance Gate & Validation:**
+- Перед запуском инструментов выполняется проверка на соответствие Charter
+- Нарушение Invariants может блокировать выполнение (hard fail)
+- При старте сессии валидируются целостность Charter/ADR-связей и циклы supersedes
 
 См. [docs/charter-system.md](docs/charter-system.md) и [docs/adr-guide.md](docs/adr-guide.md).
 
 ---
 
-## 🗓️ Scheduler (NEW in v0.0.8)
+## 🗓️ Scheduler
 
 ### Возможности
 - **One-time reminders** — "напомни через 30 минут"
@@ -189,9 +214,12 @@
 ### Интерфейс
 - ✅ Современный дизайн (React + Tailwind)
 - ✅ Streaming сообщений с плавным автоскроллом
+- ✅ Интерфейсные темы: `light / dark / auto` (auto по локальному времени)
+- ✅ Preview panel для изменений файлов (approve/edit/skip до выполнения)
 - ✅ Редактирование и пересылка сообщений
-- ✅ Session Management (pin, search, delete)
+- ✅ Session Management (pin, search, clone, delete)
 - ✅ Todo Panel с визуальным прогрессом
+- ✅ CharterPanel / ADRPanel в карточке сессии
 - ✅ Scrollable modals для большого контента
 
 ### Горячие клавиши
@@ -215,6 +243,7 @@
 | Directory sandboxing | Доступ только к workspace folder |
 | JS Sandbox | vm без network/timers |
 | Permission confirmations | Подтверждение опасных операций |
+| Compliance gate | Проверка действий по Charter до запуска инструментов |
 | No data collection | Всё хранится локально |
 
 ---
@@ -266,8 +295,9 @@
 | `sessions.db` | SQLite: sessions, messages, todos, scheduled_tasks, settings |
 | `api-settings.json` | API конфигурация |
 | `skills-settings.json` | Skills marketplace настройки |
+| `llm-providers-settings.json` | Настройки LLM провайдеров |
 | `~/.valera/memory.md` | Персистентная память пользователя |
-| `~/.valera/logs/` | Логи сессий |
+| `~/.valera/logs/sessions/{session-id}/` | Логи запросов/ответов по turn'ам |
 
 ---
 
@@ -275,10 +305,9 @@
 
 | Платформа | Статус | Формат |
 |-----------|--------|--------|
-| macOS ARM64 | ✅ | `.dmg` |
-| macOS Intel x64 | ✅ | `.dmg` |
-| Windows x64 | ✅ | `.exe`, `.msi` |
-| Linux | ✅ | `AppImage` |
+| macOS ARM64 | ✅ | Tauri bundle |
+| Windows x64 | ✅ | Tauri bundle |
+| Linux x64 | ✅ | Tauri bundle |
 
 ---
 
@@ -286,13 +315,16 @@
 
 ```bash
 # Clone
-git clone https://github.com/vakovalskii/ValeDesk.git
+git clone https://github.com/followcat/ValeDesk.git
 cd ValeDesk
 
 # Install
 npm install
 
-# Development
+# Development (recommended)
+npm run dev
+
+# Development (macOS/Linux via Makefile)
 make dev
 
 # Production build

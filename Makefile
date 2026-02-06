@@ -106,6 +106,8 @@ else
 endif
 
 bundle: ensure-tools
+	@echo "Syncing version from git tag (if present)..."
+	@npm run version:sync
 	@echo "Building UI..."
 	@npm run build
 	@echo "Building sidecar binary..."

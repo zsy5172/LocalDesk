@@ -4,7 +4,7 @@
 
 **Versatile Almost Local, Eventually Reasonable Assistant**
 
-[![Version](https://img.shields.io/badge/version-0.0.8-blue.svg)](https://github.com/followcat/ValeDesk/releases)
+[![Version](https://img.shields.io/github/v/tag/followcat/ValeDesk?sort=semver)](https://github.com/followcat/ValeDesk/releases)
 [![Platform](https://img.shields.io/badge/platform-%20Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/followcat/ValeDesk)
 [![License](https://img.shields.io/badge/license-Community-blue.svg)](LICENSE)
 
@@ -31,17 +31,21 @@ https://github.com/user-attachments/assets/a8c54ce0-2fe0-40c3-8018-026cab9d7483
 - ✅ **Local Models** — vLLM, Ollama, LM Studio support
 - ✅ **Code Sandboxes** — JavaScript (Node.js vm) and Python (system subprocess) execution
 - ✅ **Document Support** — PDF and DOCX text extraction (bundled, works out of the box)
-- ✅ **Web Search** — Tavily and Z.AI integration for internet search
-- ✅ **Telegram Parsing** — Render t.me channels with reactions, views, auto-scroll for older posts
+- ✅ **Web Capabilities** — Tavily / Z.AI search, direct `fetch_*` retrieval, and browser automation
+- ✅ **Session Governance** — Charter (scope) + ADR (decision records)
+- ✅ **Compliance Gate** — Charter-aware tool checks before execution (soft warnings / hard blocks)
+- ✅ **Session Startup Validation** — Automatic Charter/ADR integrity checks (refs + cycle checks)
 - ✅ **Security** — Directory sandboxing for safe file operations
 - ✅ **Cross-platform** — Windows, macOS, Linux with proper shell commands
 
 ### UI/UX Features
 - ✅ **Modern Interface** — React + Tauri with smooth auto-scroll and streaming
+- ✅ **Interface Theme Tab** — `light / dark / auto` theme mode, with time-based auto switching
 - ✅ **File Diff & Rollback** — Built-in visual diff viewer for file changes with one-click rollback
+- ✅ **Preview Approval Flow** — Review file writes/edits before execution (approve/edit/skip)
 - ✅ **Message Editing** — Edit and resend messages with history truncation
 - ✅ **Session Persistence** — Sessions survive app restart (SQLite backed)
-- ✅ **Session Management** — Pin important sessions, search through chat history
+- ✅ **Session Management** — Pin, search, clone sessions, plus CharterPanel / ADRPanel
 - ✅ **Keyboard Shortcuts** — Cmd+Enter/Ctrl+Enter to send messages
 - ✅ **Spell Check** — Built-in spell checking with context menu suggestions
 - ✅ **Permission System** — Ask/default modes for tool execution control
@@ -103,7 +107,7 @@ vllm serve Qwen/Qwen2.5-14B-Instruct --port 8000
 - **Node.js** 20+ 
 - **Python 3** (for `execute_python` tool)
 
-### Development (macOS/Linux)
+### Development (Cross-platform)
 
 ```bash
 # Clone and enter
@@ -113,7 +117,10 @@ cd ValeDesk
 # Install dependencies
 npm install
 
-# Run in development mode
+# Run in development mode (recommended)
+npm run dev
+
+# Or use Makefile (macOS/Linux)
 make dev
 ```
 
@@ -123,33 +130,34 @@ make dev
 npm run test
 ```
 
-### Build Standalone App
+### Build App Bundles
 
 ```bash
-# Build DMG (macOS)
+# Auto-check deps and build app bundles
 make bundle
 
-# Output: ValeDesk-0.0.8.dmg
+# Artifacts: src-tauri/target/release/bundle/
 ```
 
 ### Manual Build Steps
 
 ```bash
-# 1. Build sidecar binary
-npm run build:sidecar
+# 1. Build frontend
+npm run build
 
-# 2. Build Tauri app
-cd src-tauri && cargo build --release
+# 2. Build sidecar (Unix)
+./scripts/build_sidecar.sh
 
-# 3. Create DMG
-hdiutil create -volname "ValeDesk" \
-  -srcfolder src-tauri/target/release/bundle/macos/ValeDesk.app \
-  -ov -format UDZO ValeDesk-0.0.8.dmg
+# 3. Build Tauri app
+cd src-tauri && cargo tauri build
 ```
 
-### Windows (coming soon)
+### Release Targets
 
-Windows build requires cross-compilation setup. Check `.github/workflows/` for CI builds.
+The current Release workflow builds:
+- `macos-arm64`
+- `linux-x64`
+- `windows-x64`
 
 ### Configuration
 
@@ -159,6 +167,9 @@ Windows build requires cross-compilation setup. Check `.github/workflows/` for C
    - **Base URL** — API endpoint (must include `/v1`)
    - **Model Name** — Model identifier
    - **Temperature** — 0.0-2.0 (default: 0.3)
+   - **Interface Theme** — `light / dark / auto`
+   - **Preview Mode** — `always / ask / never`
+   - **Language** — `auto / English / 简体中文`
 3. Click **Save Settings**
 
 ### Example Configurations
@@ -192,7 +203,7 @@ Browse and install verified skills for ValeDesk: **[Skills Marketplace](https://
 
 All tools follow `snake_case` naming convention (`verb_noun` pattern):
 
-### File Operations
+### File & Workspace
 | Tool | Description |
 |------|-------------|
 | `run_command` | Execute shell commands (PowerShell/bash) |
@@ -202,6 +213,7 @@ All tools follow `snake_case` naming convention (`verb_noun` pattern):
 | `search_files` | Find files by glob pattern (`*.pdf`, `src/**/*.ts`) |
 | `search_text` | Search text content in files (grep) |
 | `read_document` | Extract text from PDF/DOCX (max 10MB) |
+| `attach_image` | Attach local images for multimodal models |
 
 ### Code Execution
 | Tool | Description |
@@ -209,13 +221,50 @@ All tools follow `snake_case` naming convention (`verb_noun` pattern):
 | `execute_js` | Run JavaScript in secure Node.js vm sandbox |
 | `execute_python` | Run Python code (system Python with pip packages) |
 
-### Web Tools
+### Search & Web Retrieval
 | Tool | Description |
 |------|-------------|
 | `search_web` | Search the internet (Tavily/Z.AI) |
 | `extract_page` | Extract full page content (Tavily only) |
 | `read_page` | Read web page content (Z.AI Reader) |
-| `render_page` | Render JS-heavy pages via Chromium (Telegram, SPAs) |
+| `search` | DuckDuckGo general search |
+| `search_news` | DuckDuckGo news search |
+| `search_images` | DuckDuckGo image search |
+| `fetch_html` | Fetch readable page content from URLs |
+| `fetch_json` | Fetch and parse JSON APIs |
+| `download_file` | Download remote files into workspace |
+
+> `render_page` was removed with Electron-only dependencies; use `browser_*` tools for dynamic pages.
+
+### Browser Automation (Playwright)
+| Tool | Description |
+|------|-------------|
+| `browser_navigate` | Open a page (automation entry point) |
+| `browser_click` | Click an element |
+| `browser_type` | Type text |
+| `browser_select` | Select dropdown values |
+| `browser_hover` | Hover an element |
+| `browser_scroll` | Scroll page |
+| `browser_press_key` | Keyboard interactions |
+| `browser_wait_for` | Wait for element/timeout |
+| `browser_snapshot` | Accessibility snapshot |
+| `browser_screenshot` | Save page screenshot to workspace |
+| `browser_execute_script` | Execute script in page context |
+
+### Git Tools
+| Tool | Description |
+|------|-------------|
+| `git_status` | Repository status |
+| `git_log` | Commit history |
+| `git_diff` | File diffs |
+| `git_branch` | Branch listing/management |
+| `git_checkout` | Switch branch or commit |
+| `git_add` | Stage files |
+| `git_commit` | Create commit |
+| `git_push` | Push to remote |
+| `git_pull` | Pull from remote |
+| `git_reset` | Reset repository state |
+| `git_show` | Show object details |
 
 ### Task Management
 
@@ -225,49 +274,70 @@ All tools follow `snake_case` naming convention (`verb_noun` pattern):
 | Tool | Description |
 |------|-------------|
 | `manage_todos` | Create/update task plans with visual progress tracking |
-
-### Scheduler
-| Tool | Description |
-|------|-------------|
 | `schedule_task` | Create, list, update, delete scheduled tasks |
 
+### Session Governance (New)
+| Tool | Description |
+|------|-------------|
+| `manage_charter` | Manage session Charter (Goal / Non-Goals / DoD / Constraints / Invariants) |
+| `manage_adr` | Manage ADR decision records (create/list/get/update_status) |
+
+Docs: [`docs/charter-system.md`](docs/charter-system.md) / [`docs/adr-guide.md`](docs/adr-guide.md)
+
 Features:
+- **Auto ADR generation** — Charter updates create `charter-change` ADR entries
+- **Compliance checks** — Charter-aware gate runs before tool execution
 - **One-time reminders** — "remind me in 30 minutes"
 - **Recurring tasks** — every minute, hour, day, week, month
 - **Auto-execution** — tasks with prompts automatically start new chat sessions
-- **Native notifications** — macOS system notifications
+- **Native notifications** — system notifications (macOS / Windows / Linux)
 - **Default model** — set preferred model for scheduled tasks
 
-### Memory
+### Memory & Skills
 | Tool | Description |
 |------|-------------|
 | `manage_memory` | Store/read persistent user preferences |
+| `load_skill` | Load skill instructions and skill resources |
+
+### Multimodal
+| Tool | Description |
+|------|-------------|
+| `transcribe_audio` | Audio transcription (Whisper, up to 25MB) |
+| `generate_image` | Image generation/editing (DALL-E) |
 
 > **Security:** All file operations are sandboxed to the workspace folder only.
 
 ## 📦 Building
 
-### Windows
+### Recommended
+```bash
+# Auto-check deps and build frontend/sidecar/Tauri bundle
+make bundle
+```
+
+### Manual (Unix)
+```bash
+# 1) Build frontend
+npm run build
+
+# 2) Build sidecar
+./scripts/build_sidecar.sh
+
+# 3) Build Tauri app
+cd src-tauri && cargo tauri build
+```
+
+### Manual (Windows PowerShell)
 ```powershell
-# Build executable and installer
-npm run dist:win
+# 1) Build frontend
+npm run build
 
-# Output: dist/ValeDesk Setup 0.0.8.exe
-```
+# 2) Build sidecar
+./scripts/build_sidecar.ps1
 
-### macOS
-```bash
-# Build DMG (ARM64)
-npm run dist:mac-arm64
-
-# Build DMG (Intel x64)
-npm run dist:mac-x64
-```
-
-### Linux
-```bash
-# Build AppImage
-npm run dist:linux
+# 3) Build Tauri app
+cd src-tauri
+cargo tauri build
 ```
 
 ## 🔐 Data Storage

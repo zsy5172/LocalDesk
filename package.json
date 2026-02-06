@@ -35,6 +35,7 @@
 		"dev": "node scripts/dev.cjs",
 		"dev:tauri": "node scripts/dev-tauri.cjs",
 		"dev:react": "vite --host localhost --port 5173 --strictPort",
+		"version:sync": "node scripts/sync-version-from-tag.cjs",
 		"build": "tsc -b && vite build --mode production",
 		"lint": "eslint .",
 		"preview": "vite preview",

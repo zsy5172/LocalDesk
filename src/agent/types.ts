@@ -217,7 +217,8 @@ export type ADRType =
   | 'technical'       // Technical implementation choices
   | 'process'         // Process/workflow decisions
   | 'charter-change'  // Changes to session charter
-  | 'constraint-override'; // Overriding a soft constraint
+  | 'constraint-override' // Overriding a soft constraint
+  | 'user-override'; // User override decisions
 
 // ADR item structure
 export interface ADRItem {

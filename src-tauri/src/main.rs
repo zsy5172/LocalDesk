@@ -1081,7 +1081,7 @@ fn get_build_info() -> Result<BuildInfo, String> {
     if cfg!(debug_assertions) { "dev" } else { "release" }
   );
   Ok(BuildInfo {
-    version: env!("CARGO_PKG_VERSION").to_string(),
+    version: option_env!("APP_VERSION").unwrap_or(env!("CARGO_PKG_VERSION")).to_string(),
     commit: commit.to_string(),
     commit_short: commit_short.to_string(),
     build_time: option_env!("BUILD_TIME").unwrap_or("unknown").to_string(),

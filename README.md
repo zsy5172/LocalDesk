@@ -4,7 +4,7 @@
 
 **Versatile Almost Local, Eventually Reasonable Assistant**
 
-[![Version](https://img.shields.io/badge/version-0.0.8-blue.svg)](https://github.com/followcat/ValeDesk/releases)
+[![Version](https://img.shields.io/github/v/tag/followcat/ValeDesk?sort=semver)](https://github.com/followcat/ValeDesk/releases)
 [![Platform](https://img.shields.io/badge/platform-%20Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/followcat/ValeDesk)
 [![License](https://img.shields.io/badge/license-Community-blue.svg)](LICENSE)
 
@@ -31,17 +31,21 @@ https://github.com/user-attachments/assets/a8c54ce0-2fe0-40c3-8018-026cab9d7483
 - ✅ **本地模型** — 支持 vLLM, Ollama, LM Studio
 - ✅ **代码沙箱** — 支持 JavaScript (Node.js vm) 和 Python (系统子进程) 执行
 - ✅ **文档支持** — PDF 和 DOCX 文本提取（内置功能，开箱即用）
-- ✅ **网络搜索** — 集成 Tavily 和 Z.AI 进行互联网搜索
-- ✅ **Telegram 解析** — 渲染 t.me 频道，包含反应、浏览量，支持自动滚动查看旧消息
+- ✅ **网页能力** — 集成 Tavily / Z.AI 搜索，支持 `fetch_*` 直连抓取与浏览器自动化
+- ✅ **会话治理** — Charter（目标/约束/DoD）与 ADR（决策记录）双系统
+- ✅ **合规闸门** — 工具执行前执行 Charter 合规检查（软告警 / 硬阻断）
+- ✅ **会话启动校验** — 自动校验 Charter 与 ADR 链完整性（含循环/引用检查）
 - ✅ **安全性** — 目录沙箱机制，确保文件操作安全
 - ✅ **跨平台** — Windows, macOS, Linux，支持正确的 shell 命令
 
 ### UI/UX 特性
 - ✅ **现代界面** — React + Tauri，流畅的自动滚动和流式传输
+- ✅ **界面主题** — Interface 选项卡支持 `light / dark / auto`，自动模式按本地时间切换
 - ✅ **文件差异与回滚** — 内置文件变更的可视化差异查看器，支持一键回滚
+- ✅ **变更预览审批** — 文件写入/编辑支持预览面板（approve/edit/skip）
 - ✅ **消息编辑** — 编辑并重新发送消息，支持历史记录截断
 - ✅ **会话持久化** — 会话在应用重启后保留（基于 SQLite）
-- ✅ **会话管理** — 置顶重要会话，搜索聊天记录
+- ✅ **会话管理** — 置顶、搜索、克隆会话，支持 CharterPanel / ADRPanel 可视化
 - ✅ **键盘快捷键** — Cmd+Enter/Ctrl+Enter 发送消息
 - ✅ **拼写检查** — 内置拼写检查，支持上下文菜单建议
 - ✅ **权限系统** — 工具执行的询问/默认模式控制
@@ -97,13 +101,13 @@ vllm serve Qwen/Qwen2.5-14B-Instruct --port 8000
 
 ## 🚀 快速开始
 
-###先决条件
+### 先决条件
 
 - **Rust** 1.74+ ([安装](https://rustup.rs/))
 - **Node.js** 20+ 
 - **Python 3** (用于 `execute_python` 工具)
 
-### 开发 (macOS/Linux)
+### 开发（跨平台）
 
 ```bash
 # 克隆并进入目录
@@ -113,7 +117,10 @@ cd ValeDesk
 # 安装依赖
 npm install
 
-# 运行开发模式
+# 运行开发模式（推荐）
+npm run dev
+
+# 或者使用 Makefile（macOS/Linux）
 make dev
 ```
 
@@ -123,33 +130,34 @@ make dev
 npm run test
 ```
 
-### 构建独立应用
+### 构建应用包
 
 ```bash
-# 构建 DMG (macOS)
+# 自动检查依赖并构建应用包
 make bundle
 
-# 输出: ValeDesk-0.0.8.dmg
+# 产物位于 src-tauri/target/release/bundle/
 ```
 
 ### 手动构建步骤
 
 ```bash
-# 1. 构建 sidecar 二进制文件
-npm run build:sidecar
+# 1. 构建前端
+npm run build
 
-# 2. 构建 Tauri 应用
-cd src-tauri && cargo build --release
+# 2. 构建 sidecar（Unix）
+./scripts/build_sidecar.sh
 
-# 3. 创建 DMG
-hdiutil create -volname "ValeDesk" \
-  -srcfolder src-tauri/target/release/bundle/macos/ValeDesk.app \
-  -ov -format UDZO ValeDesk-0.0.8.dmg
+# 3. 构建 Tauri 应用
+cd src-tauri && cargo tauri build
 ```
 
-### Windows (即将推出)
+### 发布平台
 
-Windows 构建需要交叉编译设置。查看 `.github/workflows/` 获取 CI 构建信息。
+当前 Release workflow 默认构建以下平台：
+- `macos-arm64`
+- `linux-x64`
+- `windows-x64`
 
 ### 配置
 
@@ -159,6 +167,9 @@ Windows 构建需要交叉编译设置。查看 `.github/workflows/` 获取 CI �
    - **Base URL** — API 端点（必须包含 `/v1`）
    - **Model Name** — 模型标识符
    - **Temperature** — 0.0-2.0 (默认: 0.3)
+   - **Interface Theme** — `light / dark / auto`
+   - **Preview Mode** — `always / ask / never`
+   - **Language** — `auto / English / 简体中文`
 3. 点击 **保存设置**
 
 ### 配置示例
@@ -192,7 +203,7 @@ Windows 构建需要交叉编译设置。查看 `.github/workflows/` 获取 CI �
 
 所有工具遵循 `snake_case` 命名约定（`动词_名词` 模式）：
 
-### 文件操作
+### 文件与工作区
 | 工具 | 描述 |
 |------|-------------|
 | `run_command` | 执行 Shell 命令 (PowerShell/bash) |
@@ -202,6 +213,7 @@ Windows 构建需要交叉编译设置。查看 `.github/workflows/` 获取 CI �
 | `search_files` | 通过 glob 模式查找文件 (`*.pdf`, `src/**/*.ts`) |
 | `search_text` | 在文件中搜索文本内容 (grep) |
 | `read_document` | 提取 PDF/DOCX 文本（最大 10MB） |
+| `attach_image` | 附加本地图片供多模态模型分析 |
 
 ### 代码执行
 | 工具 | 描述 |
@@ -209,13 +221,50 @@ Windows 构建需要交叉编译设置。查看 `.github/workflows/` 获取 CI �
 | `execute_js` | 在安全的 Node.js vm 沙箱中运行 JavaScript |
 | `execute_python` | 运行 Python 代码（系统 Python，支持 pip 包） |
 
-### 网络工具
+### 搜索与网页读取
 | 工具 | 描述 |
 |------|-------------|
 | `search_web` | 搜索互联网 (Tavily/Z.AI) |
 | `extract_page` | 提取完整页面内容 (仅 Tavily) |
 | `read_page` | 读取网页内容 (Z.AI Reader) |
-| `render_page` | 通过 Chromium 渲染重 JS 页面 (Telegram, SPA) |
+| `search` | DuckDuckGo 通用搜索 |
+| `search_news` | DuckDuckGo 新闻搜索 |
+| `search_images` | DuckDuckGo 图片搜索 |
+| `fetch_html` | 直接抓取网页/URL 文本内容 |
+| `fetch_json` | 请求并解析 JSON API |
+| `download_file` | 下载远程文件到工作区 |
+
+> `render_page` 已随 Electron 依赖移除；动态页面请使用下方 `browser_*` 工具。
+
+### 浏览器自动化（Playwright）
+| 工具 | 描述 |
+|------|-------------|
+| `browser_navigate` | 打开页面（浏览器自动化入口） |
+| `browser_click` | 点击页面元素 |
+| `browser_type` | 输入文本 |
+| `browser_select` | 选择下拉项 |
+| `browser_hover` | 悬停元素 |
+| `browser_scroll` | 滚动页面 |
+| `browser_press_key` | 键盘操作 |
+| `browser_wait_for` | 等待元素/超时 |
+| `browser_snapshot` | 获取可访问性快照 |
+| `browser_screenshot` | 截图到工作区 |
+| `browser_execute_script` | 在页面执行脚本 |
+
+### Git 工具
+| 工具 | 描述 |
+|------|-------------|
+| `git_status` | 查看仓库状态 |
+| `git_log` | 查看提交历史 |
+| `git_diff` | 查看文件差异 |
+| `git_branch` | 分支查看/管理 |
+| `git_checkout` | 切换分支或提交 |
+| `git_add` | 暂存文件 |
+| `git_commit` | 创建提交 |
+| `git_push` | 推送远程 |
+| `git_pull` | 拉取远程 |
+| `git_reset` | 重置状态 |
+| `git_show` | 查看对象详情 |
 
 ### 任务管理
 
@@ -225,49 +274,70 @@ Windows 构建需要交叉编译设置。查看 `.github/workflows/` 获取 CI �
 | 工具 | 描述 |
 |------|-------------|
 | `manage_todos` | 创建/更新任务计划，带可视化进度跟踪 |
-
-### 调度器
-| 工具 | 描述 |
-|------|-------------|
 | `schedule_task` | 创建、列出、更新、删除计划任务 |
 
+### 会话治理（新增）
+| 工具 | 描述 |
+|------|-------------|
+| `manage_charter` | 管理会话 Charter（Goal / Non-Goals / DoD / Constraints / Invariants） |
+| `manage_adr` | 管理 ADR 决策记录（create/list/get/update_status） |
+
+文档：[`docs/charter-system.md`](docs/charter-system.md) / [`docs/adr-guide.md`](docs/adr-guide.md)
+
 特性：
+- **自动 ADR** — Charter 变更自动生成 `charter-change` ADR
+- **合规检查** — 执行工具前先做合规闸门（硬约束可阻断）
 - **一次性提醒** — "30分钟后提醒我"
 - **重复任务** — 每分钟、每小时、每天、每周、每月
 - **自动执行** — 带有提示词的任务会自动开始新的聊天会话
-- **原生通知** — macOS 系统通知
+- **原生通知** — 系统通知（macOS / Windows / Linux）
 - **默认模型** — 设置计划任务的首选模型
 
-### 记忆
+### 记忆与技能
 | 工具 | 描述 |
 |------|-------------|
 | `manage_memory` | 存储/读取持久化用户偏好 |
+| `load_skill` | 读取技能指令与技能文件资源 |
+
+### 多模态
+| 工具 | 描述 |
+|------|-------------|
+| `transcribe_audio` | 音频转写（Whisper，最大 25MB） |
+| `generate_image` | 图像生成/编辑（DALL-E） |
 
 > **安全性：** 所有文件操作都沙箱化限制在工作区文件夹内。
 
 ## 📦 构建
 
-### Windows
+### 推荐方式
+```bash
+# 自动检查依赖并完成前端/sidecar/Tauri 打包
+make bundle
+```
+
+### 手动方式（Unix）
+```bash
+# 1) 构建前端
+npm run build
+
+# 2) 构建 sidecar
+./scripts/build_sidecar.sh
+
+# 3) 构建 Tauri
+cd src-tauri && cargo tauri build
+```
+
+### 手动方式（Windows PowerShell）
 ```powershell
-# 构建可执行文件和安装程序
-npm run dist:win
+# 1) 构建前端
+npm run build
 
-# 输出: dist/ValeDesk Setup 0.0.8.exe
-```
+# 2) 构建 sidecar
+./scripts/build_sidecar.ps1
 
-### macOS
-```bash
-# 构建 DMG (ARM64)
-npm run dist:mac-arm64
-
-# 构建 DMG (Intel x64)
-npm run dist:mac-x64
-```
-
-### Linux
-```bash
-# 构建 AppImage
-npm run dist:linux
+# 3) 构建 Tauri
+cd src-tauri
+cargo tauri build
 ```
 
 ## 🔐 数据存储

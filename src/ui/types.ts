@@ -108,7 +108,8 @@ export type ADRType =
   | 'technical'       // Technical implementation choices
   | 'process'         // Process/workflow decisions
   | 'charter-change'  // Changes to session charter
-  | 'constraint-override'; // Overriding a soft constraint
+  | 'constraint-override' // Overriding a soft constraint
+  | 'user-override'; // User override decisions
 
 // ADR item structure
 export interface ADRItem {
@@ -372,9 +373,9 @@ export interface LLMProviderSettings {
 export type ServerEvent =
   | { type: "stream.message"; payload: { sessionId: string; message: StreamMessage; threadId?: string } }
   | { type: "stream.user_prompt"; payload: { sessionId: string; prompt: string; threadId?: string; attachments?: Attachment[] } }
-  | { type: "session.status"; payload: { sessionId: string; status: SessionStatus; title?: string; cwd?: string; error?: string; model?: string; temperature?: number; threadId?: string } }
+  | { type: "session.status"; payload: { sessionId: string; status: SessionStatus; title?: string; cwd?: string; error?: string; model?: string; temperature?: number; threadId?: string; charter?: CharterData; charterHash?: string; adrs?: ADRItem[] } }
   | { type: "session.list"; payload: { sessions: SessionInfo[] } }
-  | { type: "session.history"; payload: { sessionId: string; status: SessionStatus; messages: StreamMessage[]; inputTokens?: number; outputTokens?: number; todos?: TodoItem[]; model?: string; fileChanges?: FileChange[]; hasMore?: boolean; nextCursor?: number; page?: "initial" | "prepend" } }
+  | { type: "session.history"; payload: { sessionId: string; status: SessionStatus; messages: StreamMessage[]; inputTokens?: number; outputTokens?: number; todos?: TodoItem[]; model?: string; fileChanges?: FileChange[]; hasMore?: boolean; nextCursor?: number; page?: "initial" | "prepend"; charter?: CharterData; charterHash?: string; adrs?: ADRItem[] } }
   | { type: "session.deleted"; payload: { sessionId: string } }
   | { type: "session.cloned"; payload: { session: SessionInfo } }
   | { type: "permission.request"; payload: { sessionId: string; toolUseId: string; toolName: string; input: unknown; explanation?: string } }
