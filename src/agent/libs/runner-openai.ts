@@ -1069,8 +1069,8 @@ export async function runOpenAI(options: RunnerOptions): Promise<RunnerHandle> {
         
         // Accumulate token usage
         if (streamMetadata.usage) {
-          totalInputTokens += streamMetadata.usage.prompt_tokens || 0;
-          totalOutputTokens += streamMetadata.usage.completion_tokens || 0;
+          totalInputTokens += streamMetadata.usage.prompt_tokens ?? streamMetadata.usage.input_tokens ?? 0;
+          totalOutputTokens += streamMetadata.usage.completion_tokens ?? streamMetadata.usage.output_tokens ?? 0;
         }
         
         const normalizedToolCalls = toolCalls.filter(Boolean);
