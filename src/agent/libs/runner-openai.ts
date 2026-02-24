@@ -332,28 +332,70 @@ export async function runOpenAI(options: RunnerOptions): Promise<RunnerHandle> {
         modelName = modelId;
         temperature = session.temperature; // undefined means don't send
         providerInfo = `${provider.name} (${provider.type})`;
-        modelContextLength = llmSettings?.models?.find(m => m.id === modelId && m.providerId === providerId)?.contextLength;
+        modelContextLength = llmSettings?.models?.find(m => m.id === session.model && m.providerId === providerId)?.contextLength;
       } else {
-        // Use legacy API settings (apiKey/baseURL from file; model from session or file)
+        // Prefer legacy API settings; if missing, try to resolve from configured LLM providers.
         const guiSettings = loadApiSettings();
-        
-        if (!guiSettings || !guiSettings.baseUrl) {
-          throw new Error('API settings not configured. Please set Base URL (and API Key) in Settings (⚙️).');
-        }
-        
-        if (!guiSettings.apiKey) {
-          throw new Error('API Key is missing. Please configure it in Settings (⚙️).');
-        }
+        const legacyConfigured = Boolean(guiSettings?.baseUrl && guiSettings?.apiKey);
 
-        apiKey = guiSettings.apiKey;
-        baseURL = guiSettings.baseUrl;
-        modelName = session.model || guiSettings.model || '';
-        if (!modelName) {
-          throw new Error('Model not set. Set default model in Settings or Scheduler default model (⚙️).');
+        if (legacyConfigured) {
+          apiKey = guiSettings!.apiKey;
+          baseURL = guiSettings!.baseUrl;
+          modelName = session.model || guiSettings!.model || '';
+          if (!modelName) {
+            throw new Error('Model not set. Set default model in Settings or Scheduler default model (⚙️).');
+          }
+          temperature = session.temperature;
+          providerInfo = 'Legacy API';
+          modelContextLength = undefined;
+        } else {
+          const llmSettings = loadLLMProviderSettings();
+          const sessionModelName = session.model;
+          let resolvedProvider: import('../types.js').LLMProvider | undefined;
+          let resolvedModelId: string | undefined;
+          let resolvedModelContextLength: number | undefined;
+
+          if (llmSettings && sessionModelName) {
+            const matchingModel = llmSettings.models.find((m) => m.id === sessionModelName || m.name === sessionModelName);
+            if (matchingModel) {
+              resolvedProvider = llmSettings.providers.find((p) => p.id === matchingModel.providerId && p.enabled !== false);
+              resolvedModelId = matchingModel.id.includes('::') ? matchingModel.id.split('::')[1] : matchingModel.name;
+              resolvedModelContextLength = matchingModel.contextLength;
+            }
+
+            if (!resolvedProvider) {
+              const firstEnabled = llmSettings.models.find((m) => m.enabled !== false);
+              if (firstEnabled) {
+                resolvedProvider = llmSettings.providers.find((p) => p.id === firstEnabled.providerId && p.enabled !== false);
+                resolvedModelId = firstEnabled.id.includes('::') ? firstEnabled.id.split('::')[1] : firstEnabled.name;
+                resolvedModelContextLength = firstEnabled.contextLength;
+                console.warn(`[OpenAI Runner] Model "${sessionModelName}" not found in providers, falling back to "${resolvedModelId}"`);
+              }
+            }
+          }
+
+          if (resolvedProvider && resolvedModelId) {
+            apiKey = resolvedProvider.apiKey;
+            if (resolvedProvider.type === 'openrouter') {
+              baseURL = 'https://openrouter.ai/api/v1';
+            } else if (resolvedProvider.type === 'zai') {
+              const prefix = resolvedProvider.zaiApiPrefix === 'coding' ? 'api/coding/paas' : 'api/paas';
+              baseURL = `https://api.z.ai/${prefix}/v4`;
+            } else {
+              baseURL = resolvedProvider.baseUrl || '';
+            }
+            modelName = resolvedModelId;
+            temperature = session.temperature;
+            providerInfo = `${resolvedProvider.name} (auto-resolved from model name)`;
+            modelContextLength = resolvedModelContextLength;
+          } else {
+            throw new Error(
+              'API settings not configured. If you added an LLM Provider, make sure to ' +
+              'select a provider model (with :: in the name) from the model dropdown. ' +
+              'Otherwise, set Base URL and API Key in Settings (⚙️).'
+            );
+          }
         }
-        temperature = session.temperature; // undefined means don't send
-        providerInfo = 'Legacy API';
-        modelContextLength = undefined;
       }
 
       const debug = !!(process.env.VALERA_DEBUG || process.env.DEBUG);
@@ -392,7 +434,8 @@ export async function runOpenAI(options: RunnerOptions): Promise<RunnerHandle> {
       };
 
       // Initialize OpenAI client with custom fetch and timeout
-      const REQUEST_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for long operations
+      const timeoutMs = loadApiSettings()?.requestTimeoutMs;
+      const REQUEST_TIMEOUT_MS = timeoutMs && timeoutMs > 0 ? timeoutMs : 5 * 60 * 1000;
       const client = new OpenAI({
         apiKey: apiKey || 'dummy-key',
         baseURL: baseURL,

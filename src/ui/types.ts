@@ -318,6 +318,7 @@ export type ApiSettings = {
   enableDuckDuckGo?: boolean; // Enable search/search_news/search_images (no API key needed)
   enableFetchTools?: boolean; // Enable fetch/fetch_json/download tools
   enableImageTools?: boolean; // Enable attach_image tool
+  requestTimeoutMs?: number; // API request timeout in ms (default: 300000 = 5 min)
   llmProviders?: LLMProviderSettings; // LLM providers and models configuration
   language?: 'auto' | 'en' | 'zh-CN'; // UI language preference
 
@@ -378,6 +379,8 @@ export type ServerEvent =
   | { type: "session.history"; payload: { sessionId: string; status: SessionStatus; messages: StreamMessage[]; inputTokens?: number; outputTokens?: number; todos?: TodoItem[]; model?: string; fileChanges?: FileChange[]; hasMore?: boolean; nextCursor?: number; page?: "initial" | "prepend"; charter?: CharterData; charterHash?: string; adrs?: ADRItem[] } }
   | { type: "session.deleted"; payload: { sessionId: string } }
   | { type: "session.cloned"; payload: { session: SessionInfo } }
+  | { type: "session.compacting"; payload: { sessionId: string } }
+  | { type: "session.compacted"; payload: { oldSessionId: string; newSessionId: string } }
   | { type: "permission.request"; payload: { sessionId: string; toolUseId: string; toolName: string; input: unknown; explanation?: string } }
   | { type: "runner.error"; payload: { sessionId?: string; message: string } }
   | { type: "settings.loaded"; payload: { settings: ApiSettings | null } }
@@ -420,6 +423,7 @@ export type ClientEvent =
   | { type: "session.pin"; payload: { sessionId: string; isPinned: boolean; } }
   | { type: "session.update-cwd"; payload: { sessionId: string; cwd: string; } }
   | { type: "session.update"; payload: { sessionId: string; model?: string; temperature?: number; sendTemperature?: boolean; title?: string; } }
+  | { type: "session.compact"; payload: { sessionId: string } }
   | { type: "session.list" }
   | { type: "session.history"; payload: { sessionId: string; limit?: number; before?: number } }
   | { type: "permission.response"; payload: { sessionId: string; toolUseId: string; result: PermissionResult; } }

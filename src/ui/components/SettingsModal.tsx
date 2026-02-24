@@ -55,6 +55,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
   const [enableDuckDuckGo, setEnableDuckDuckGo] = useState(currentSettings?.enableDuckDuckGo || false);
   const [enableFetchTools, setEnableFetchTools] = useState(currentSettings?.enableFetchTools || false);
   const [enableImageTools, setEnableImageTools] = useState(currentSettings?.enableImageTools ?? false);
+  const [requestTimeoutMs, setRequestTimeoutMs] = useState(currentSettings?.requestTimeoutMs?.toString() || "300000");
   const [conversationDataDir, setConversationDataDir] = useState(currentSettings?.conversationDataDir || "");
   const [enableSessionGitRepo, setEnableSessionGitRepo] = useState(currentSettings?.enableSessionGitRepo ?? false);
   const [enablePreview, setEnablePreview] = useState(currentSettings?.enablePreview ?? false);
@@ -171,6 +172,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       setEnableDuckDuckGo(currentSettings.enableDuckDuckGo || false);
       setEnableFetchTools(currentSettings.enableFetchTools || false);
       setEnableImageTools(currentSettings.enableImageTools ?? false);
+      setRequestTimeoutMs(currentSettings.requestTimeoutMs?.toString() || "300000");
       setConversationDataDir(currentSettings.conversationDataDir || "");
       setEnableSessionGitRepo(currentSettings.enableSessionGitRepo ?? false);
       setEnablePreview(currentSettings.enablePreview ?? false);
@@ -340,6 +342,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       enableDuckDuckGo,
       enableFetchTools,
       enableImageTools,
+      requestTimeoutMs: parseInt(requestTimeoutMs, 10) || 300000,
       language,
       interfaceTheme,
       llmProviders: llmProviderSettings,
@@ -385,6 +388,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
     setEnableDuckDuckGo(false);
     setEnableFetchTools(false);
     setEnableImageTools(false);
+    setRequestTimeoutMs("300000");
     setConversationDataDir("");
     setEnableSessionGitRepo(false);
     setLanguage("auto");
@@ -580,6 +584,8 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
                 memoryError={memoryError}
                 permissionMode={permissionMode}
                 setPermissionMode={setPermissionMode}
+                requestTimeoutMs={requestTimeoutMs}
+                setRequestTimeoutMs={setRequestTimeoutMs}
               />
             )}
           </div>
@@ -1758,7 +1764,9 @@ function MemoryModeTab({
   loadMemoryContent,
   memoryError,
   permissionMode,
-  setPermissionMode
+  setPermissionMode,
+  requestTimeoutMs,
+  setRequestTimeoutMs
 }: any) {
   const { t } = useTranslation();
   return (
@@ -1832,6 +1840,29 @@ function MemoryModeTab({
         </select>
         <p className="mt-1 text-xs text-ink-500">
           {t("settings.permissionMode.hint")}
+        </p>
+      </div>
+
+      <div className="border-t border-ink-900/10 pt-6">
+        <label className="block text-sm font-medium text-ink-700 mb-2">
+          API Request Timeout
+        </label>
+        <div className="flex items-center gap-3">
+          <input
+            type="number"
+            min="30000"
+            max="3600000"
+            step="30000"
+            value={requestTimeoutMs}
+            onChange={(e) => setRequestTimeoutMs(e.target.value)}
+            className="w-40 px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-ink-900/20 transition-all"
+          />
+          <span className="text-sm text-ink-500">
+            ms ({Math.round((parseInt(requestTimeoutMs || "0", 10) / 1000 / 60) * 10) / 10} min)
+          </span>
+        </div>
+        <p className="mt-1 text-xs text-ink-500">
+          How long to wait for API responses before timing out. Default: 300000 ms (5 min).
         </p>
       </div>
     </div>

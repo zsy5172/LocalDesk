@@ -51,6 +51,28 @@ export async function executeWriteTool(
       error: 'Missing required parameter: content. You must provide the file content to write.'
     };
   }
+
+  // write_file is for text formats; binary/structured files require dedicated libraries/tools.
+  const BINARY_EXTENSIONS = new Set([
+    '.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt',
+    '.pdf', '.zip', '.tar', '.gz', '.rar', '.7z',
+    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.ico', '.svg',
+    '.mp3', '.mp4', '.wav', '.avi', '.mov', '.mkv',
+    '.exe', '.dll', '.so', '.dylib', '.wasm',
+    '.sqlite', '.db'
+  ]);
+  const extMatch = args.file_path.toLowerCase().match(/(\.[^.\/\\]+)$/);
+  const ext = extMatch ? extMatch[1] : '';
+  if (ext && BINARY_EXTENSIONS.has(ext)) {
+    const docFormats = new Set(['.docx', '.doc', '.pdf', '.xlsx', '.xls', '.pptx', '.ppt']);
+    const hint = docFormats.has(ext)
+      ? ` Use execute_python with an appropriate library (e.g. python-docx, openpyxl, reportlab), or load a relevant skill.`
+      : '';
+    return {
+      success: false,
+      error: `write_file only supports text-based formats. Cannot create binary file "${args.file_path}" (${ext}).${hint}`
+    };
+  }
   
   // Security check
   if (!context.isPathSafe(args.file_path)) {
