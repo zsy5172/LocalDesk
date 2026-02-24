@@ -66,6 +66,17 @@ export async function executeReadTool(
     };
   }
 
+  // Skill scripts should be executed via bash, not read into the chat.
+  const normalizedPath = args.file_path.replace(/\\/g, '/');
+  if (normalizedPath.match(/\/skills\/[^/]+\/scripts\//) || normalizedPath.match(/^skills\/[^/]+\/scripts\//)) {
+    return {
+      success: false,
+      error: `Do not read skill script source code. Execute scripts directly via bash:\n` +
+             `cd <skill_directory> && python scripts/<script_name>.py [args]\n\n` +
+             `Use load_skill with operation "get" to read SKILL.md instructions.`
+    };
+  }
+
   // Security check
   if (!context.isPathSafe(args.file_path)) {
     return {
@@ -139,4 +150,3 @@ export async function executeReadTool(
     };
   }
 }
-

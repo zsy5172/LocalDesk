@@ -3,7 +3,6 @@ import { getEnabledSkills, loadSkillsSettings, Skill } from "../skills-store.js"
 import { 
   readSkillContent, 
   listSkillFiles, 
-  readSkillFile,
   getSkillPath
 } from "../skills-loader.js";
 
@@ -11,30 +10,27 @@ export const SkillsToolDefinition = {
   type: "function" as const,
   function: {
     name: "load_skill",
-    description: `Load a skill to get detailed instructions, scripts, and resources. 
+    description: `Load a skill to get instructions and discover available scripts.
 Use this when you need to perform a specialized task and want to follow best practices.
-Skills provide step-by-step instructions, example code, and guidelines for specific tasks.
+Skills provide step-by-step instructions and ready-to-run scripts.
 
 Available operations:
 - "get": Get the full SKILL.md content with instructions
-- "list_files": List all files in the skill directory  
-- "read_file": Read a specific file from the skill (scripts, references, etc.)
-- "list_available": List all enabled skills`,
+- "list_files": List all files in the skill directory
+- "list_available": List all enabled skills
+
+IMPORTANT: Do not read skill script source code. Execute scripts directly via bash.`,
     parameters: {
       type: "object" as const,
       properties: {
         operation: {
           type: "string",
-          enum: ["get", "list_files", "read_file", "list_available"],
+          enum: ["get", "list_files", "list_available"],
           description: "The operation to perform"
         },
         skill_id: {
           type: "string",
-          description: "The skill identifier (required for get, list_files, read_file)"
-        },
-        file_path: {
-          type: "string",
-          description: "Path to file within skill directory (required for read_file operation)"
+          description: "The skill identifier (required for get, list_files)"
         }
       },
       required: ["operation"]
@@ -51,9 +47,8 @@ export class SkillsTool extends BaseTool {
   
   async execute(
     args: { 
-      operation: "get" | "list_files" | "read_file" | "list_available";
+      operation: "get" | "list_files" | "list_available";
       skill_id?: string;
-      file_path?: string;
     },
     context: ToolExecutionContext
   ): Promise<ToolResult> {
@@ -76,17 +71,8 @@ export class SkillsTool extends BaseTool {
           }
           return this.listSkillFiles(args.skill_id, cwd);
           
-        case "read_file":
-          if (!args.skill_id) {
-            return { success: false, error: "skill_id is required for 'read_file' operation" };
-          }
-          if (!args.file_path) {
-            return { success: false, error: "file_path is required for 'read_file' operation" };
-          }
-          return this.readSkillFile(args.skill_id, args.file_path, cwd);
-          
         default:
-          return { success: false, error: `Unknown operation: ${args.operation}` };
+          return { success: false, error: `Unknown operation: ${args.operation}. Use "get", "list_files", or "list_available".` };
       }
     } catch (error: any) {
       return {
@@ -141,10 +127,13 @@ export class SkillsTool extends BaseTool {
     try {
       // Pass cwd to download skill to workspace/.valera/skills/
       const content = await readSkillContent(skillId, cwd);
+      const skillDir = await getSkillPath(skillId, cwd);
       
       return {
         success: true,
-        output: `## Skill: ${skill.name}\n\n${content}`
+        output: `## Skill: ${skill.name}\n\n**Skill directory:** \`${skillDir}\`\n\n` +
+          `Important: resolve all relative paths in this skill (scripts/, references/, config/) ` +
+          `relative to this skill directory, not the user's working directory.\n\n${content}`
       };
     } catch (error: any) {
       return {
@@ -167,12 +156,15 @@ export class SkillsTool extends BaseTool {
     
     try {
       const files = await listSkillFiles(skillId, cwd);
+      const skillDir = await getSkillPath(skillId, cwd);
       
       const filesList = files.map((f: string) => `- ${f}`).join("\n");
       
       return {
         success: true,
-        output: `## Files in skill "${skillId}":\n\n${filesList}\n\n**To read these files, use this tool again with:**\n\`\`\`json\n{ "operation": "read_file", "skill_id": "${skillId}", "file_path": "<filename>" }\n\`\`\`\n\n⚠️ Do NOT use the regular \`read_file\` tool - these files are inside the skill directory.`
+        output: `## Files in skill "${skillId}":\n\n**Skill directory:** \`${skillDir}\`\n\n${filesList}\n\n` +
+          `Execute scripts directly via bash:\n\`\`\`bash\ncd ${skillDir} && python scripts/<script_name>.py [args]\n\`\`\`\n\n` +
+          `Resolve relative paths from \`${skillDir}\`, not from the user's working directory.`
       };
     } catch (error: any) {
       return {
@@ -182,37 +174,13 @@ export class SkillsTool extends BaseTool {
     }
   }
   
-  private async readSkillFile(skillId: string, filePath: string, cwd?: string): Promise<ToolResult> {
-    const enabledSkills = getEnabledSkills();
-    const skill = enabledSkills.find((s: Skill) => s.id === skillId);
-    
-    if (!skill) {
-      return {
-        success: false,
-        error: `Skill "${skillId}" is not enabled or not found.`
-      };
-    }
-    
-    try {
-      const content = await readSkillFile(skillId, filePath, cwd);
-      
-      return {
-        success: true,
-        output: `## File: ${filePath}\n\n\`\`\`\n${content}\n\`\`\``
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        error: `Failed to read file: ${error.message}`
-      };
-    }
-  }
 }
 
 /**
- * Generate skills context for system prompt
+ * Generate skills context for system prompt.
+ * `cwd` is passed for API parity with caller and future use.
  */
-export function generateSkillsPromptSection(): string {
+export function generateSkillsPromptSection(_cwd?: string): string {
   const enabledSkills = getEnabledSkills();
   
   if (enabledSkills.length === 0) {
@@ -236,7 +204,8 @@ ${skillsList}
 1. When you recognize a task that matches a skill, call \`load_skill\` with operation "get" and the skill_id
 2. Follow the instructions in the skill's SKILL.md
 3. Use operation "list_files" to see available scripts and references
-4. Use operation "read_file" to read specific scripts or reference files
+4. Do not read skill script source code; execute scripts directly via \`bash\`
+5. Resolve relative paths from the skill directory shown in tool output, not from the user's working directory
 
 Skills help you follow best practices and produce consistent, high-quality results.
 `;
