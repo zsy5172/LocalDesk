@@ -206,9 +206,12 @@ export function PromptInput({ sendEvent }: PromptInputProps) {
   const setGlobalError = useAppStore((state) => state.setGlobalError);
   const cwd = useAppStore((state) => state.cwd);
   const activeSessionId = useAppStore((state) => state.activeSessionId);
+  const compactingSessionId = useAppStore((state) => state.compactingSessionId);
   const sessions = useAppStore((state) => state.sessions);
   const activeSession = activeSessionId ? sessions[activeSessionId] : undefined;
   const attachmentCwd = activeSession?.cwd || cwd;
+  const hasHistory = (activeSession?.messages?.length ?? 0) > 1;
+  const isCompacting = compactingSessionId === activeSessionId;
 
   // Process file to attachment
   const processFile = useCallback(async (file: File): Promise<Attachment | null> => {
@@ -402,6 +405,11 @@ export function PromptInput({ sendEvent }: PromptInputProps) {
     // Shift+Enter - allow multiline (default behavior)
   };
 
+  const handleCompact = useCallback(() => {
+    if (!activeSessionId || isRunning || isCompacting) return;
+    sendEvent({ type: "session.compact", payload: { sessionId: activeSessionId } });
+  }, [activeSessionId, isCompacting, isRunning, sendEvent]);
+
   const handleInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
     const target = e.currentTarget;
     target.style.height = "auto";
@@ -475,6 +483,21 @@ export function PromptInput({ sendEvent }: PromptInputProps) {
             onPaste={handlePaste}
             ref={promptRef}
           />
+          {hasHistory && (
+            <button
+              className={`flex h-9 shrink-0 items-center justify-center rounded-full border px-3 text-xs transition-colors ${
+                isCompacting
+                  ? "border-accent/40 text-accent cursor-not-allowed opacity-60"
+                  : "border-ink-900/15 text-muted hover:border-accent/40 hover:text-accent"
+              }`}
+              onClick={handleCompact}
+              disabled={isCompacting || isRunning}
+              aria-label="Compact conversation"
+              title="Compact conversation"
+            >
+              {isCompacting ? "Compacting..." : "Compact"}
+            </button>
+          )}
           <button
             className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${isRunning ? "bg-error text-white hover:bg-error/90" : "bg-accent text-white hover:bg-accent-hover"}`}
             onClick={isRunning ? handleStop : () => { void handleSend(); }}

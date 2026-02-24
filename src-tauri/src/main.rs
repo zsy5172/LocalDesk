@@ -594,6 +594,18 @@ fn start_sidecar(app: tauri::AppHandle, sidecar_state: &SidecarState) -> Result<
                   }
                   continue; // Don't emit to frontend
                 }
+
+                // Intercept sidecar in-memory session.list and replace with full DB list.
+                if event_type == "session.list" {
+                  let state: tauri::State<'_, AppState> = app_handle.state();
+                  if let Ok(sessions) = state.db.list_sessions() {
+                    let _ = emit_server_event_app(&app_handle, &json!({
+                      "type": "session.list",
+                      "payload": { "sessions": sessions }
+                    }));
+                  }
+                  continue; // Don't forward sidecar's partial in-memory list
+                }
                 
                 // Handle file_changes.updated - save to DB before emitting to frontend
                 if event_type == "file_changes.updated" {
@@ -1622,6 +1634,44 @@ fn client_event(app: tauri::AppHandle, state: tauri::State<'_, AppState>, event:
         }
         Err(e) => {
           eprintln!("[session.continue] DB error: {}", e);
+          send_to_sidecar(app, state.inner(), &event)
+        }
+      }
+    }
+
+    // session.compact - enrich with session data/history for sidecar restore path
+    "session.compact" => {
+      let payload = event.get("payload").ok_or_else(|| "[session.compact] missing payload".to_string())?;
+      let session_id = payload.get("sessionId").and_then(|v| v.as_str())
+        .ok_or_else(|| "[session.compact] missing sessionId".to_string())?;
+
+      eprintln!("[session.compact] Looking up session: {}", session_id);
+
+      match state.db.get_session_history(session_id) {
+        Ok(Some(history)) => {
+          let enriched_event = json!({
+            "type": "session.compact",
+            "payload": {
+              "sessionId": session_id,
+              "sessionData": {
+                "title": history.session.title,
+                "cwd": history.session.cwd,
+                "model": history.session.model,
+                "allowedTools": history.session.allowed_tools,
+                "temperature": history.session.temperature
+              },
+              "messages": history.messages,
+              "todos": history.todos
+            }
+          });
+          send_to_sidecar(app, state.inner(), &enriched_event)
+        }
+        Ok(None) => {
+          eprintln!("[session.compact] Session {} NOT FOUND in DB!", session_id);
+          send_to_sidecar(app, state.inner(), &event)
+        }
+        Err(e) => {
+          eprintln!("[session.compact] DB error: {}", e);
           send_to_sidecar(app, state.inner(), &event)
         }
       }

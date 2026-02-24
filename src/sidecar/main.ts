@@ -455,6 +455,178 @@ Format your response clearly with sections.`;
   sessions.setAbortController(summarySession.id, undefined);
 }
 
+async function callModelForSummary(session: Session, conversationText: string): Promise<string> {
+  let apiKey = '';
+  let baseURL = '';
+  let modelName = '';
+
+  const llmSettings = loadLLMProviderSettings();
+  const guiSettings = loadApiSettings();
+
+  const configureProvider = (provider: any, rawModelId: string) => {
+    apiKey = provider.apiKey;
+    if (provider.type === 'openrouter') {
+      baseURL = 'https://openrouter.ai/api/v1';
+    } else if (provider.type === 'zai') {
+      const prefix = provider.zaiApiPrefix === 'coding' ? 'api/coding/paas' : 'api/paas';
+      baseURL = `https://api.z.ai/${prefix}/v4`;
+    } else {
+      baseURL = provider.baseUrl || '';
+    }
+    modelName = rawModelId;
+  };
+
+  if (session.model?.includes('::') && llmSettings) {
+    const [providerId, rawModelId] = session.model.split('::');
+    const provider = llmSettings.providers.find((p: any) => p.id === providerId && p.enabled !== false);
+    if (provider && rawModelId) {
+      configureProvider(provider, rawModelId);
+    }
+  }
+
+  if (!apiKey || !baseURL || !modelName) {
+    if (guiSettings?.baseUrl && guiSettings?.apiKey) {
+      apiKey = guiSettings.apiKey;
+      baseURL = guiSettings.baseUrl;
+      modelName = session.model || guiSettings.model || '';
+    }
+  }
+
+  if ((!apiKey || !baseURL || !modelName) && llmSettings) {
+    for (const provider of llmSettings.providers) {
+      if (provider.enabled === false) continue;
+      const providerModel = llmSettings.models.find((m: any) => m.providerId === provider.id && m.enabled !== false);
+      if (!providerModel) continue;
+      const rawModelId = providerModel.id.includes('::') ? providerModel.id.split('::')[1] : providerModel.name;
+      if (!rawModelId) continue;
+      configureProvider(provider, rawModelId);
+      break;
+    }
+  }
+
+  if (!apiKey || !baseURL || !modelName) {
+    throw new Error('No provider/model available for compact summary');
+  }
+
+  const OpenAI = (await import('openai')).default;
+  const timeoutMs = guiSettings?.requestTimeoutMs && guiSettings.requestTimeoutMs > 0
+    ? guiSettings.requestTimeoutMs
+    : 60_000;
+  const client = new OpenAI({
+    apiKey: apiKey || 'dummy-key',
+    baseURL,
+    dangerouslyAllowBrowser: false,
+    timeout: timeoutMs,
+    maxRetries: 1
+  });
+
+  const completion = await client.chat.completions.create({
+    model: modelName,
+    messages: [
+      {
+        role: 'system',
+        content: `You are a conversation summarizer.
+Create a compact summary preserving:
+- key decisions
+- important technical context
+- file paths and actionable state
+Output only the summary.`
+      },
+      {
+        role: 'user',
+        content: `Summarize this conversation:\n\n${conversationText}`
+      }
+    ],
+    stream: false
+  });
+
+  return (completion.choices[0]?.message?.content || '').trim();
+}
+
+async function performCompact(sessionId: string, nextPrompt?: string): Promise<void> {
+  const session = sessions.getSession(sessionId);
+  if (!session) {
+    sendRunnerError("Unknown session", sessionId);
+    return;
+  }
+
+  emit({ type: "session.compacting", payload: { sessionId } } as any);
+
+  try {
+    const history = sessions.getSessionHistory(sessionId);
+    if (!history || history.messages.length === 0) {
+      throw new Error("No messages to compact");
+    }
+
+    const lines: string[] = [];
+    for (const msg of history.messages as any[]) {
+      if (msg.type === 'user_prompt') {
+        if (msg.prompt?.trim()) lines.push(`User: ${msg.prompt}`);
+      } else if (msg.type === 'text') {
+        if (msg.text?.trim()) lines.push(`Assistant: ${msg.text}`);
+      } else if (msg.type === 'assistant' && Array.isArray(msg.message?.content)) {
+        const textParts = msg.message.content
+          .filter((part: any) => part?.type === 'text' && typeof part.text === 'string')
+          .map((part: any) => part.text.trim())
+          .filter(Boolean);
+        if (textParts.length > 0) lines.push(`Assistant: ${textParts.join('\n')}`);
+      }
+    }
+
+    const conversationText = lines.join('\n\n').trim();
+    if (!conversationText) {
+      throw new Error("No meaningful content to compact");
+    }
+
+    let summary = '';
+    try {
+      summary = await callModelForSummary(session, conversationText);
+    } catch (error) {
+      console.warn('[sidecar] Compact summary generation failed:', error);
+      summary = `[Summary generation failed. Original conversation had ${lines.length} messages.]`;
+    }
+
+    const newSession = sessions.createSession({
+      title: `${session.title || 'Chat'} (compacted)`,
+      cwd: session.cwd,
+      allowedTools: session.allowedTools,
+      model: session.model,
+      temperature: session.temperature,
+      enableSessionGitRepo: session.enableSessionGitRepo
+    });
+
+    sessions.recordMessage(newSession.id, {
+      type: "user_prompt",
+      prompt: `[Previous conversation summary]\n\n${summary}`
+    } as any);
+    emitSessionStatus(newSession, "idle");
+
+    emit({
+      type: "session.compacted",
+      payload: { oldSessionId: sessionId, newSessionId: newSession.id }
+    } as any);
+
+    if (nextPrompt && nextPrompt.trim()) {
+      sessions.updateSession(newSession.id, { status: "running", lastPrompt: nextPrompt });
+      const refreshed = sessions.getSession(newSession.id);
+      if (refreshed) {
+        emitSessionStatus(refreshed, "running");
+      }
+      emitAndPersist({
+        type: "stream.user_prompt",
+        payload: { sessionId: newSession.id, prompt: nextPrompt }
+      } as any);
+      startRunner(newSession.id, nextPrompt);
+    }
+  } catch (error) {
+    sendRunnerError(`Compact failed: ${String(error)}`, sessionId);
+    emit({
+      type: "session.compacted",
+      payload: { oldSessionId: sessionId, newSessionId: sessionId }
+    } as any);
+  }
+}
+
 function emitAndPersist(event: ServerEvent) {
   // Mirror the behavior in Electron ipc-handlers.ts:
   // - persist session.status and stream messages to DB
@@ -657,7 +829,7 @@ function handleSessionContinue(event: Extract<ClientEvent, { type: "session.cont
   
   // If session not in memory, try to restore from sessionData (provided by Rust)
   if (!session && sessionData) {
-    session = sessions.createSession({
+    session = sessions.restoreSession({
       id: sessionId,
       title: sessionData.title || "Restored Session",
       cwd: sessionData.cwd,
@@ -800,7 +972,7 @@ function handleMessageEdit(event: Extract<ClientEvent, { type: "message.edit" }>
   
   // If session not in memory, try to restore from sessionData (provided by Rust)
   if (!session && sessionData) {
-    session = sessions.createSession({
+    session = sessions.restoreSession({
       id: sessionId,
       title: sessionData.title || "Restored Session",
       cwd: sessionData.cwd,
@@ -1360,6 +1532,35 @@ async function handleClientEvent(event: ClientEvent) {
     case "session.update":
       handleSessionUpdate(event);
       return;
+    case "session.compact": {
+      const payload = event.payload as any;
+      const sessionId = payload.sessionId as string;
+      let compactSession = sessions.getSession(sessionId);
+      if (!compactSession && payload.sessionData) {
+        compactSession = sessions.restoreSession({
+          id: sessionId,
+          title: payload.sessionData.title || "Restored Session",
+          cwd: payload.sessionData.cwd,
+          model: payload.sessionData.model,
+          allowedTools: payload.sessionData.allowedTools,
+          temperature: payload.sessionData.temperature
+        });
+        if (Array.isArray(payload.messages)) {
+          for (const msg of payload.messages) {
+            const messages = (sessions as any).messages.get(sessionId) || [];
+            messages.push(msg);
+            (sessions as any).messages.set(sessionId, messages);
+          }
+        }
+        if (Array.isArray(payload.todos)) {
+          (sessions as any).todos.set(sessionId, payload.todos);
+        }
+      }
+      void performCompact(sessionId).catch((error) => {
+        sendRunnerError(`Compact failed: ${String(error)}`, sessionId);
+      });
+      return;
+    }
     case "permission.response":
       handlePermissionResponse(event);
       return;

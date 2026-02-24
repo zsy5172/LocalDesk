@@ -136,6 +136,42 @@ export class MemorySessionStore {
     return session;
   }
 
+  /**
+   * Restore an existing session into memory without triggering syncCallback#create.
+   * Use this when Rust provides persisted session data.
+   */
+  restoreSession(options: {
+    id: string;
+    title: string;
+    cwd?: string;
+    model?: string;
+    allowedTools?: string;
+    temperature?: number;
+    threadId?: string;
+    enableSessionGitRepo?: boolean;
+  }): Session {
+    const existing = this.sessions.get(options.id);
+    if (existing) return existing;
+
+    const session: Session = {
+      id: options.id,
+      title: options.title,
+      status: "idle",
+      cwd: options.cwd,
+      allowedTools: options.allowedTools,
+      model: options.model,
+      temperature: options.temperature,
+      threadId: options.threadId,
+      enableSessionGitRepo: options.enableSessionGitRepo,
+      pendingPermissions: new Map()
+    };
+    this.sessions.set(options.id, session);
+    this.messages.set(options.id, []);
+    this.todos.set(options.id, []);
+    this.fileChanges.set(options.id, []);
+    return session;
+  }
+
   getSession(id: string): Session | undefined {
     return this.sessions.get(id);
   }

@@ -62,6 +62,7 @@ interface AppState {
   schedulerDefaultModel: string | null;
   schedulerDefaultTemperature: number | null;
   schedulerDefaultSendTemperature: boolean | null;
+  compactingSessionId: string | null;
   // Attachments for multimodal support
   attachments: Attachment[];
 
@@ -118,6 +119,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   schedulerDefaultModel: null,
   schedulerDefaultTemperature: null,
   schedulerDefaultSendTemperature: null,
+  compactingSessionId: null,
   attachments: [],
 
   setPrompt: (prompt) => set({ prompt }),
@@ -400,6 +402,19 @@ export const useAppStore = create<AppState>((set, get) => ({
         break;
       }
 
+      case "session.compacting": {
+        const { sessionId } = event.payload;
+        set({ compactingSessionId: sessionId });
+        break;
+      }
+
+      case "session.compacted": {
+        const { newSessionId } = event.payload;
+        set({ compactingSessionId: null });
+        get().setActiveSessionId(newSessionId);
+        break;
+      }
+
       case "stream.message": {
         const { sessionId, message } = event.payload;
 
@@ -414,16 +429,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         set((state) => {
           const existing = state.sessions[sessionId] ?? createSession(sessionId);
 
-          // Extract token usage from result messages
-          let inputTokens = existing.inputTokens;
-          let outputTokens = existing.outputTokens;
+          // Accumulate token usage from result messages (runner sends per-run totals)
+          let inputTokens = existing.inputTokens ?? 0;
+          let outputTokens = existing.outputTokens ?? 0;
           if (message.type === "result" && message.usage) {
             const { input_tokens, output_tokens } = message.usage;
             if (input_tokens !== undefined) {
-              inputTokens = input_tokens;
+              inputTokens += input_tokens;
             }
             if (output_tokens !== undefined) {
-              outputTokens = output_tokens;
+              outputTokens += output_tokens;
             }
           }
 
